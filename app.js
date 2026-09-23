@@ -1,4 +1,4 @@
-const state = { view: 'dashboard', dashboard: null, leads: [], excursions: [], selectedLead: null, conversation: [], whatsapp: null, leadFilter: 'Todos' };
+const state = { view: 'dashboard', dashboard: null, leads: [], excursions: [], selectedLead: null, conversation: [], whatsapp: null, leadFilter: 'Todos', user: null, calendarMonth: new Date('2026-09-01T12:00:00') };
 
 const $ = (selector) => document.querySelector(selector);
 const esc = (value = '') => String(value).replace(/[&<>"']/g, (char) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[char]));
@@ -9,8 +9,22 @@ const dateTime = (value) => new Intl.DateTimeFormat('pt-BR', { day: '2-digit', m
 async function api(path, options = {}) {
   const response = await fetch(path, { headers: { 'Content-Type': 'application/json' }, ...options });
   const data = await response.json();
-  if (!response.ok) throw new Error(data.error || 'Não foi possível concluir a ação');
+  if (!response.ok) { const error = new Error(data.error || 'Não foi possível concluir a ação'); error.status = response.status; throw error; }
   return data;
+}
+
+function showApp() { $('#auth-root').innerHTML = ''; $('#app-shell').classList.remove('auth-hidden'); }
+
+function renderLogin(message = '') {
+  $('#app-shell').classList.add('auth-hidden');
+  $('#auth-root').innerHTML = `<main class="auth-page"><section class="auth-card"><div class="auth-brand"><img src="/logo.png" alt="Agência Premius" /><div><strong>PREMIUS</strong><span>central de viagens</span></div></div><p class="eyebrow">ACESSO RESTRITO</p><h1>Bem-vindo de volta</h1><p class="auth-copy">Entre para acompanhar seus leads, excursões e resultados.</p><form id="login-form" class="auth-form"><label class="form-label">E-mail<input class="form-control" type="email" name="email" placeholder="admin@agenciapremius.com" autocomplete="username" required /></label><label class="form-label">Senha<input class="form-control" type="password" name="password" placeholder="Digite sua senha" autocomplete="current-password" required /></label>${message ? `<div class="auth-error">${esc(message)}</div>` : ''}<button class="primary-button" type="submit">Entrar no painel <span>→</span></button></form><p class="auth-footnote">Acesso protegido para a equipe da Agência Premius.</p></section></main>`;
+}
+
+async function login(input) {
+  const button = $('#login-form button[type="submit"]');
+  button.disabled = true; button.textContent = 'Entrando…';
+  try { const result = await api('/api/auth/login', { method: 'POST', body: JSON.stringify(input) }); state.user = result.user; showApp(); await loadData(); renderDashboard(); }
+  catch (error) { renderLogin(error.message); }
 }
 
 function toast(message, error = false) {
@@ -82,10 +96,37 @@ async function renderWhatsApp() {
   renderShell(`${pageHeading('CANAL DE ATENDIMENTO', 'WhatsApp da agência', 'Conecte seu número e transforme conversas em reservas.', badge)}<div class="wa-layout"><section class="panel wa-connect-card"><h2>Conexão Baileys</h2><div class="wa-status ${connected ? 'connected' : ''}"><i></i>${statusText}</div><div class="qr-wrap">${qrMarkup}</div><p class="wa-instructions">Abra o WhatsApp no celular, vá em <b>Aparelhos conectados</b> e escaneie o QR Code. A sessão fica guardada no servidor.</p>${waAction}<div class="wa-trust"><span>✓</span><div><b>Sessão protegida</b>O histórico e a autenticação ficam no volume seguro do servidor.</div></div></section><section class="panel conversation-panel"><div class="conversation-head">${lead ? `${leadAvatar(lead)}<div><strong>${esc(lead.name)}</strong><small>${esc(lead.lastMessage)}</small></div>` : '<div><strong>Nenhuma conversa</strong></div>'}<span class="wa-status ${connected ? 'connected' : ''}"><i></i>${connected ? 'online' : 'offline'}</span></div><div class="messages" id="messages">${msgs || '<div class="empty-card" style="border:0;background:transparent;min-height:200px"><div><span>◉</span><strong>Escolha um lead para conversar</strong><p>A caixa de entrada aparecerá aqui.</p></div></div>'}</div><form class="compose" id="compose-form"><input id="message-input" placeholder="Escreva uma mensagem..." autocomplete="off" /><button title="Enviar">➤</button></form></section></div>`);
 }
 
-function renderSimple(title, copy, icon) { renderShell(`${pageHeading('EM BREVE', title, copy)}<div class="empty-card" style="min-height:420px"><div><span>${icon}</span><strong>Estamos preparando esta área</strong><p>Os dados principais já estão disponíveis na visão geral.</p></div></div>`); }
+function calendarMonthLabel(value) { return new Intl.DateTimeFormat('pt-BR', { month: 'long', year: 'numeric' }).format(value).replace(/^./, (char) => char.toUpperCase()); }
+
+function renderCalendar() {
+  const month = new Date(state.calendarMonth); const year = month.getFullYear(); const monthIndex = month.getMonth();
+  const firstDay = new Date(year, monthIndex, 1).getDay(); const daysInMonth = new Date(year, monthIndex + 1, 0).getDate();
+  const cells = []; const weekday = ['Dom', 'Seg', 'Ter', 'Qua', 'Qui', 'Sex', 'Sáb'];
+  for (let i = 0; i < firstDay; i += 1) cells.push('<div class="calendar-day muted-day"></div>');
+  for (let day = 1; day <= daysInMonth; day += 1) {
+    const key = `${year}-${String(monthIndex + 1).padStart(2, '0')}-${String(day).padStart(2, '0')}`;
+    const events = state.excursions.filter((item) => item.date <= key && (item.endDate || item.date) >= key);
+    const isToday = key === new Date().toISOString().slice(0, 10);
+    cells.push(`<div class="calendar-day ${isToday ? 'today' : ''}"><span class="calendar-number">${day}</span><div class="calendar-events">${events.slice(0, 3).map((item) => `<button class="calendar-event ${item.color}" data-view="excursions" title="${esc(item.title)}"><b>${esc(item.title.split(' · ')[0])}</b><small>${esc(item.destination)}</small></button>`).join('')}${events.length > 3 ? `<span class="calendar-more">+${events.length - 3} roteiros</span>` : ''}</div></div>`);
+  }
+  while (cells.length < 42) cells.push('<div class="calendar-day muted-day"></div>');
+  const upcoming = state.excursions.filter((item) => item.date >= new Date().toISOString().slice(0, 10)).sort((a, b) => a.date.localeCompare(b.date)).slice(0, 5);
+  renderShell(`${pageHeading('PLANEJAMENTO', 'Calendário de saídas', 'Visualize roteiros, datas e lotação da operação.', '<button class="primary-button" data-action="new-excursion">＋ Nova excursão</button>')}<div class="calendar-toolbar"><div class="calendar-nav"><button class="secondary-button" data-calendar-nav="prev">←</button><button class="calendar-title" data-calendar-nav="today">${calendarMonthLabel(month)}</button><button class="secondary-button" data-calendar-nav="next">→</button></div><span class="muted">${state.excursions.length} roteiros cadastrados</span></div><section class="calendar-layout"><div class="panel calendar-panel"><div class="calendar-weekdays">${weekday.map((day) => `<span>${day}</span>`).join('')}</div><div class="calendar-grid">${cells.join('')}</div></div><aside class="panel agenda-panel"><div class="panel-header"><div class="panel-title"><h2>Próximas saídas</h2><span class="muted">agenda</span></div></div><div class="agenda-list">${upcoming.map((item) => `<button class="agenda-item" data-view="excursions"><span class="agenda-date">${date(item.date)}<small>${item.date.slice(0, 4)}</small></span><span class="agenda-info"><b>${esc(item.title)}</b><small>${esc(item.destination)} · ${item.reserved}/${item.seats} lugares</small></span><span class="agenda-arrow">→</span></button>`).join('') || '<div class="empty-card" style="border:0;min-height:180px"><div><span>▦</span><strong>Sem próximas saídas</strong><p>Cadastre um novo roteiro.</p></div></div>'}</div></aside></section>`);
+}
+
+function renderReports() {
+  const totalLeads = state.leads.length; const closed = state.leads.filter((lead) => lead.stage === 'Fechado').length;
+  const revenue = state.excursions.reduce((sum, item) => sum + Number(item.reserved || 0) * Number(item.price || 0), 0);
+  const capacity = state.excursions.reduce((sum, item) => sum + Number(item.seats || 0), 0); const reserved = state.excursions.reduce((sum, item) => sum + Number(item.reserved || 0), 0);
+  const occupancy = capacity ? Math.round(reserved / capacity * 100) : 0; const conversion = totalLeads ? Math.round(closed / totalLeads * 100) : 0;
+  const sources = [...new Set(state.leads.map((lead) => lead.source || 'Outros'))].map((source) => ({ source, total: state.leads.filter((lead) => (lead.source || 'Outros') === source).length })).sort((a, b) => b.total - a.total);
+  const maxSource = Math.max(1, ...sources.map((item) => item.total));
+  const ranking = [...state.excursions].sort((a, b) => (b.reserved * b.price) - (a.reserved * a.price));
+  renderShell(`${pageHeading('INTELIGÊNCIA DA OPERAÇÃO', 'Relatórios', 'Decisões melhores com uma leitura simples dos seus números.', '<button class="primary-button" data-action="export-report">⇩ Exportar CSV</button>')}<div class="report-period"><span>Período analisado</span><b>Todos os dados cadastrados</b><span class="report-live">● Atualizado agora</span></div><div class="stats-grid report-stats">${metricCard('R$', 'purple', 'Receita estimada', money(revenue), 'reservas confirmadas')}${metricCard('◒', 'lime', 'Conversão de leads', `${conversion}%`, `${closed} vendas fechadas`)}${metricCard('♧', 'orange', 'Ocupação geral', `${occupancy}%`, `${reserved} lugares reservados`)}${metricCard('✦', 'blue', 'Ticket médio', money(closed ? revenue / closed : 0), 'por venda fechada')}</div><div class="reports-grid"><section class="panel report-panel"><div class="panel-header"><div class="panel-title"><h2>Desempenho por excursão</h2><span class="muted">receita potencial</span></div></div><div class="report-table-wrap"><table class="report-table"><thead><tr><th>Roteiro</th><th>Saída</th><th>Ocupação</th><th>Receita</th></tr></thead><tbody>${ranking.map((item) => `<tr><td><b>${esc(item.title)}</b><small>${esc(item.destination)}</small></td><td>${date(item.date)}</td><td><span class="report-progress"><i style="width:${Math.min(100, item.reserved / Math.max(1, item.seats) * 100)}%"></i></span><small>${item.reserved}/${item.seats}</small></td><td><b>${money(item.reserved * item.price)}</b></td></tr>`).join('') || '<tr><td colspan="4">Nenhum dado ainda.</td></tr>'}</tbody></table></div></section><section class="panel report-panel"><div class="panel-header"><div class="panel-title"><h2>Origem dos leads</h2><span class="muted">volume por canal</span></div></div><div class="source-list">${sources.map((item) => `<div class="source-row"><div><b>${esc(item.source)}</b><small>${item.total} lead${item.total === 1 ? '' : 's'}</small></div><div class="source-bar"><i style="width:${item.total / maxSource * 100}%"></i></div><strong>${Math.round(item.total / Math.max(1, totalLeads) * 100)}%</strong></div>`).join('') || '<div class="empty-card" style="border:0;min-height:170px"><div><span>◒</span><strong>Sem leads</strong><p>Os canais aparecerão aqui.</p></div></div>'}</div></section></div>`);
+}
 
 async function loadData() { [state.dashboard, state.leads, state.excursions] = await Promise.all([api('/api/dashboard'), api('/api/leads'), api('/api/excursions')]); state.dashboard = state.dashboard; $('#nav-leads-count').textContent = state.leads.filter((lead) => lead.unread).length; }
-async function navigate(view) { state.view = view; if (view === 'dashboard') renderDashboard(); else if (view === 'leads') renderLeads(); else if (view === 'excursions') renderExcursions(); else if (view === 'whatsapp') { state.conversation = []; await renderWhatsApp(); } else renderSimple(view === 'calendar' ? 'Calendário de saídas' : 'Relatórios', 'Acompanhe os próximos passos da operação.', view === 'calendar' ? '▦' : '▤'); }
+async function navigate(view) { state.view = view; if (view === 'dashboard') renderDashboard(); else if (view === 'leads') renderLeads(); else if (view === 'excursions') renderExcursions(); else if (view === 'whatsapp') { state.conversation = []; await renderWhatsApp(); } else if (view === 'calendar') renderCalendar(); else if (view === 'reports') renderReports(); }
 
 function openExcursionModal() {
   $('#modal-root').innerHTML = `<div class="modal-backdrop"><form class="modal" id="excursion-form"><div class="modal-header"><h2>Nova excursão</h2><button type="button" data-action="close-modal">×</button></div><div class="modal-body"><label class="form-label">Nome do roteiro<input class="form-control" name="title" placeholder="Ex.: Serra da Canastra · Feriado" required /></label><label class="form-label">Destino<input class="form-control" name="destination" placeholder="Cidade / estado" required /></label><div class="form-grid"><label class="form-label">Data de saída<input class="form-control" type="date" name="date" required /></label><label class="form-label">Data de retorno<input class="form-control" type="date" name="endDate" required /></label></div><div class="form-grid"><label class="form-label">Valor por pessoa<input class="form-control" type="number" name="price" placeholder="690" required /></label><label class="form-label">Lugares<input class="form-control" type="number" name="seats" placeholder="40" required /></label></div><label class="form-label">Descrição curta<textarea class="form-control" name="description" rows="3" placeholder="O que está incluso no pacote?"></textarea></label></div><div class="modal-footer"><button type="button" class="secondary-button" data-action="close-modal">Cancelar</button><button class="primary-button">Salvar excursão</button></div></form></div>`;
@@ -94,6 +135,14 @@ function openExcursionModal() {
 function openLeadModal() { $('#modal-root').innerHTML = `<div class="modal-backdrop"><div class="modal"><div class="modal-header"><h2>Cadastrar lead</h2><button data-action="close-modal">×</button></div><div class="modal-body"><p class="muted" style="margin:0">O cadastro manual estará conectado à agenda de atendimento na próxima etapa. Por enquanto, a central está recebendo leads do WhatsApp e das redes sociais automaticamente.</p></div><div class="modal-footer"><button class="primary-button" data-action="close-modal">Entendi</button></div></div></div>`; }
 
 document.addEventListener('click', async (event) => {
+  const calendarNav = event.target.closest('[data-calendar-nav]');
+  if (calendarNav) {
+    const action = calendarNav.dataset.calendarNav;
+    if (action === 'today') state.calendarMonth = new Date();
+    if (action === 'prev') state.calendarMonth = new Date(state.calendarMonth.getFullYear(), state.calendarMonth.getMonth() - 1, 1);
+    if (action === 'next') state.calendarMonth = new Date(state.calendarMonth.getFullYear(), state.calendarMonth.getMonth() + 1, 1);
+    renderCalendar(); return;
+  }
   const nav = event.target.closest('[data-view]'); if (nav) { await navigate(nav.dataset.view); return; }
   const leadFilter = event.target.closest('[data-lead-filter]'); if (leadFilter) { state.leadFilter = leadFilter.dataset.leadFilter; renderLeads(); return; }
   const leadRowEl = event.target.closest('[data-lead-id]'); if (leadRowEl && !event.target.closest('[data-action]')) { state.selectedLead = state.leads.find((lead) => lead.id === leadRowEl.dataset.leadId); if (state.view === 'whatsapp') { state.conversation = await api(`/api/conversations/${state.selectedLead.id}`); } else renderLeads(); return; }
@@ -109,6 +158,12 @@ document.addEventListener('click', async (event) => {
     if (type === 'connect-wa') { action.disabled = true; action.textContent = 'Gerando QR…'; state.whatsapp = await api('/api/whatsapp/connect', { method: 'POST' }); toast(state.whatsapp.mode === 'demo' ? 'QR de demonstração gerado' : 'QR gerado — escaneie pelo celular'); await renderWhatsApp(); if (state.whatsapp.status === 'connecting') { setTimeout(async () => { state.whatsapp = await api('/api/whatsapp/status'); await renderWhatsApp(); }, 5000); } }
     if (type === 'disconnect-wa') { state.whatsapp = await api('/api/whatsapp/disconnect', { method: 'POST' }); toast('WhatsApp desconectado'); await renderWhatsApp(); }
     if (type === 'edit-excursion') { const item = state.excursions.find((excursion) => excursion.id === action.dataset.id); toast(`${item.title} · ${item.reserved}/${item.seats} lugares reservados`); }
+    if (type === 'export-report') {
+      const rows = [['Roteiro', 'Destino', 'Saida', 'Lugares', 'Reservados', 'Valor por pessoa', 'Receita estimada'], ...state.excursions.map((item) => [item.title, item.destination, item.date, item.seats, item.reserved, item.price, item.reserved * item.price])];
+      const csv = rows.map((row) => row.map((value) => `"${String(value ?? '').replaceAll('"', '""')}"`).join(';')).join('\n');
+      const link = document.createElement('a'); link.href = URL.createObjectURL(new Blob([`\ufeff${csv}`], { type: 'text/csv;charset=utf-8' })); link.download = `relatorio-premius-${new Date().toISOString().slice(0, 10)}.csv`; link.click(); URL.revokeObjectURL(link.href); toast('Relatório exportado');
+    }
+    if (type === 'logout') { await api('/api/auth/logout', { method: 'POST' }); state.user = null; renderLogin(); }
   } catch (error) { toast(error.message, true); }
 });
 
@@ -117,6 +172,7 @@ document.addEventListener('change', async (event) => {
 });
 
 document.addEventListener('submit', async (event) => {
+  if (event.target.id === 'login-form') { event.preventDefault(); await login(Object.fromEntries(new FormData(event.target).entries())); return; }
   if (event.target.id === 'excursion-form') { event.preventDefault(); const input = Object.fromEntries(new FormData(event.target).entries()); try { await api('/api/excursions', { method: 'POST', body: JSON.stringify(input) }); $('#modal-root').innerHTML = ''; await loadData(); toast('Excursão criada com sucesso'); navigate('excursions'); } catch (error) { toast(error.message, true); } }
   if (event.target.id === 'compose-form') { event.preventDefault(); const input = $('#message-input'); if (!input.value.trim() || !state.selectedLead) return; try { const message = await api(`/api/conversations/${state.selectedLead.id}/messages`, { method: 'POST', body: JSON.stringify({ text: input.value }) }); state.conversation.push(message); input.value = ''; const box = $('#messages'); box.insertAdjacentHTML('beforeend', `<div class="message agent">${esc(message.text)}<time>${message.time}</time></div>`); box.scrollTop = box.scrollHeight; } catch (error) { toast(error.message, true); } }
 });
@@ -124,5 +180,9 @@ document.addEventListener('submit', async (event) => {
 $('#mobile-menu').addEventListener('click', () => document.querySelector('.sidebar').classList.toggle('open'));
 $('#open-search').addEventListener('click', () => { if (state.view !== 'leads') navigate('leads'); setTimeout(() => $('#lead-search')?.focus(), 50); });
 
-await loadData();
-renderDashboard();
+async function boot() {
+  try { const session = await api('/api/auth/me'); state.user = session.user; showApp(); await loadData(); renderDashboard(); }
+  catch (error) { if (error.status === 401 || error.status === 503) renderLogin(); else renderLogin('Não foi possível conectar ao servidor.'); }
+}
+
+boot();

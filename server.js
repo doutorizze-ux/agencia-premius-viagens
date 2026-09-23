@@ -1,4 +1,5 @@
 import http from 'node:http';
+import crypto from 'node:crypto';
 import { readFile, writeFile, mkdir } from 'node:fs/promises';
 import { existsSync } from 'node:fs';
 import path from 'node:path';
@@ -9,6 +10,10 @@ const PORT = Number(process.env.PORT || 3000);
 const DATA_DIR = path.resolve(process.env.DATA_DIR || path.join(__dirname, 'data'));
 const DB_FILE = path.join(DATA_DIR, 'premius.json');
 const AUTH_DIR = path.resolve(process.env.BAILEYS_AUTH_DIR || path.join(DATA_DIR, 'whatsapp-auth'));
+const ADMIN_EMAIL = String(process.env.ADMIN_EMAIL || 'admin@agenciapremius.com').trim().toLowerCase();
+const ADMIN_PASSWORD = process.env.ADMIN_PASSWORD || '';
+const SESSION_COOKIE = 'premius_session';
+const sessions = new Map();
 
 const seed = {
   excursions: [
@@ -56,6 +61,37 @@ function json(res, status, payload) {
   const body = JSON.stringify(payload);
   res.writeHead(status, { 'Content-Type': 'application/json; charset=utf-8', 'Cache-Control': 'no-store', 'Access-Control-Allow-Origin': '*' });
   res.end(body);
+}
+
+function parseCookies(req) {
+  return Object.fromEntries(String(req.headers.cookie || '').split(';').map((part) => part.trim()).filter(Boolean).map((part) => {
+    const index = part.indexOf('=');
+    return [index === -1 ? part : part.slice(0, index), index === -1 ? '' : decodeURIComponent(part.slice(index + 1))];
+  }));
+}
+
+function currentUser(req) {
+  const token = parseCookies(req)[SESSION_COOKIE];
+  if (!token) return null;
+  const session = sessions.get(token);
+  if (!session || session.expiresAt < Date.now()) { sessions.delete(token); return null; }
+  return { email: ADMIN_EMAIL, name: 'Eduardo Bueno', role: 'Administrador' };
+}
+
+function setSession(res) {
+  const token = crypto.randomBytes(32).toString('hex');
+  sessions.set(token, { expiresAt: Date.now() + 1000 * 60 * 60 * 24 * 14 });
+  res.setHeader('Set-Cookie', `${SESSION_COOKIE}=${encodeURIComponent(token)}; HttpOnly; Path=/; SameSite=Lax; Max-Age=1209600`);
+}
+
+function clearSession(res, req) {
+  const token = parseCookies(req)[SESSION_COOKIE];
+  if (token) sessions.delete(token);
+  res.setHeader('Set-Cookie', `${SESSION_COOKIE}=; HttpOnly; Path=/; SameSite=Lax; Max-Age=0`);
+}
+
+function isProtectedApi(pathname) {
+  return pathname.startsWith('/api/') && !pathname.startsWith('/api/auth/');
 }
 
 async function body(req) {
@@ -141,6 +177,21 @@ async function route(req, res) {
   if (req.method === 'OPTIONS') { res.writeHead(204, { 'Access-Control-Allow-Origin': '*', 'Access-Control-Allow-Headers': 'Content-Type', 'Access-Control-Allow-Methods': 'GET,POST,PATCH,OPTIONS' }); return res.end(); }
   try {
     if (pathname === '/health' && req.method === 'GET') return json(res, 200, { status: 'ok', service: 'agencia-premius' });
+    if (pathname === '/api/auth/me' && req.method === 'GET') {
+      const user = currentUser(req);
+      return user ? json(res, 200, { authenticated: true, user }) : json(res, 401, { error: 'Não autenticado' });
+    }
+    if (pathname === '/api/auth/login' && req.method === 'POST') {
+      if (!ADMIN_PASSWORD) return json(res, 503, { error: 'Login ainda não configurado no servidor. Defina ADMIN_PASSWORD no Coolify.' });
+      const input = await body(req);
+      const email = String(input.email || '').trim().toLowerCase();
+      const password = String(input.password || '');
+      if (email !== ADMIN_EMAIL || password !== ADMIN_PASSWORD) return json(res, 401, { error: 'E-mail ou senha inválidos' });
+      setSession(res);
+      return json(res, 200, { authenticated: true, user: { email: ADMIN_EMAIL, name: 'Eduardo Bueno', role: 'Administrador' } });
+    }
+    if (pathname === '/api/auth/logout' && req.method === 'POST') { clearSession(res, req); return json(res, 200, { ok: true }); }
+    if (isProtectedApi(pathname) && !currentUser(req)) return json(res, 401, { error: 'Sessão expirada. Faça login novamente.' });
     if (pathname === '/api/dashboard' && req.method === 'GET') {
       const reserved = db.excursions.reduce((sum, item) => sum + item.reserved, 0);
       const capacity = db.excursions.reduce((sum, item) => sum + item.seats, 0);

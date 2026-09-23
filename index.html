@@ -12,7 +12,8 @@
     <link rel="stylesheet" href="/styles.css" />
   </head>
   <body>
-    <div id="app-shell">
+    <div id="auth-root"></div>
+    <div id="app-shell" class="auth-hidden">
       <aside class="sidebar">
         <div class="brand">
           <img src="/logo.png" alt="Agência Premius" />
@@ -32,7 +33,7 @@
         </nav>
         <div class="sidebar-bottom">
           <div class="tip-card"><span class="tip-spark">✦</span><strong>Jev ativo</strong><p>Seu copiloto identifica os leads mais quentes.</p><button data-view="leads">Ver leads prioritários →</button></div>
-          <button class="profile"><span class="avatar avatar-lime">EB</span><span><strong>Eduardo Bueno</strong><small>Administrador</small></span><span class="profile-more">•••</span></button>
+          <button class="profile" data-action="logout" title="Sair do painel"><span class="avatar avatar-lime">EB</span><span><strong>Eduardo Bueno</strong><small>Administrador · Sair</small></span><span class="profile-more">↪</span></button>
         </div>
       </aside>
       <main class="main-content">
