@@ -137,6 +137,47 @@ async function jevAnalysis(lead) {
   return { temperature: temp?.choice || 'warm', intent: intent?.choice || 'question', confidence: Math.max(temp?.confidence || 0, intent?.confidence || 0), needsFollowup: Boolean(result.answers?.needsFollowup?.noul), source: 'jev', model: result.model };
 }
 
+function messageText(message) {
+  return message?.conversation
+    || message?.extendedTextMessage?.text
+    || message?.imageMessage?.caption
+    || message?.videoMessage?.caption
+    || message?.documentMessage?.caption
+    || '';
+}
+
+function phoneFromJid(jid) { return String(jid || '').split('@')[0].replace(/\D/g, ''); }
+
+async function upsertWhatsAppLead(incoming) {
+  const jid = incoming.key?.remoteJid;
+  const text = messageText(incoming.message);
+  if (!jid || jid === 'status@broadcast' || jid.endsWith('@g.us') || incoming.key?.fromMe || !text.trim()) return null;
+  const phone = phoneFromJid(jid);
+  let lead = db.leads.find((item) => item.whatsappJid === jid || (phone && String(item.phone || '').replace(/\D/g, '') === phone));
+  if (!lead) {
+    const name = incoming.pushName || phone || 'Novo contato';
+    lead = { id: `lead-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`, name, phone, avatar: name.split(/\s+/).map((part) => part[0]).slice(0, 2).join('').toUpperCase(), excursionId: null, source: 'WhatsApp', lastMessage: text.trim(), lastAt: new Date().toISOString(), stage: 'Novo', tag: 'Novo lead', score: 0, unread: true, whatsappJid: jid, analysis: null };
+    db.leads.unshift(lead);
+  } else {
+    lead.whatsappJid = jid; lead.lastMessage = text.trim(); lead.lastAt = new Date().toISOString(); lead.unread = true;
+  }
+  if (!db.conversations[lead.id]) db.conversations[lead.id] = [];
+  const messageId = incoming.key?.id || `${Date.now()}`;
+  if (!db.conversations[lead.id].some((item) => item.externalId === messageId)) db.conversations[lead.id].push({ id: Date.now(), externalId: messageId, from: 'lead', text: text.trim(), time: new Date().toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' }) });
+  try { lead.analysis = await jevAnalysis(lead); lead.score = Math.round((lead.analysis.confidence || 0.6) * 100); lead.tag = lead.analysis.temperature === 'hot' ? 'Alta intenção' : lead.analysis.temperature === 'warm' ? 'Em avaliação' : 'Nutrição'; } catch (error) { console.error('Jev não analisou lead do WhatsApp:', error.message); }
+  await persist();
+  return lead;
+}
+
+async function sendWhatsAppMessage(lead, text) {
+  if (whatsapp.mode === 'baileys') {
+    if (!whatsapp.socket || whatsapp.status !== 'connected') throw new Error('WhatsApp ainda não está conectado');
+    const jid = lead.whatsappJid || `${String(lead.phone || '').replace(/\D/g, '')}@s.whatsapp.net`;
+    if (!jid || jid === '@s.whatsapp.net') throw new Error('Este lead não possui um número de WhatsApp válido');
+    await whatsapp.socket.sendMessage(jid, { text });
+  }
+}
+
 async function startBaileys() {
   if (whatsapp.mode !== 'baileys') return;
   try {
@@ -147,12 +188,17 @@ async function startBaileys() {
     whatsapp.socket = socket;
     whatsapp.status = 'connecting';
     socket.ev.on('creds.update', saveCreds);
+    socket.ev.on('messages.upsert', async ({ messages, type }) => {
+      if (type !== 'notify') return;
+      for (const incoming of messages || []) await upsertWhatsAppLead(incoming);
+    });
     socket.ev.on('connection.update', async ({ connection, lastDisconnect, qr }) => {
       if (qr) whatsapp.qr = await (await import('qrcode')).toDataURL(qr, { width: 280, margin: 1 });
       if (connection === 'open') { whatsapp.status = 'connected'; whatsapp.qr = null; whatsapp.lastConnectedAt = new Date().toISOString(); }
       if (connection === 'close') {
         whatsapp.status = 'disconnected';
         whatsapp.qr = null;
+        whatsapp.socket = null;
         const shouldReconnect = lastDisconnect?.error?.output?.statusCode !== baileys.DisconnectReason.loggedOut;
         if (shouldReconnect) setTimeout(startBaileys, 3000);
       }
@@ -160,7 +206,8 @@ async function startBaileys() {
   } catch (error) {
     console.error('Baileys indisponível:', error.message);
     whatsapp.status = 'error';
-    whatsapp.mode = 'demo';
+    whatsapp.qr = null;
+    whatsapp.socket = null;
   }
 }
 
@@ -213,7 +260,7 @@ async function route(req, res) {
     if (convMatch) {
       const id = convMatch[1]; if (!db.conversations[id]) db.conversations[id] = [];
       if (req.method === 'GET') return json(res, 200, db.conversations[id]);
-      if (req.method === 'POST' && pathname.endsWith('/messages')) { const input = await body(req); const message = { id: Date.now(), from: 'agent', text: String(input.text || '').trim(), time: new Date().toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' }) }; if (!message.text) return json(res, 400, { error: 'Mensagem vazia' }); db.conversations[id].push(message); const lead = getLead(id); if (lead) { lead.lastMessage = message.text; lead.lastAt = new Date().toISOString(); lead.unread = false; } await persist(); return json(res, 201, message); }
+      if (req.method === 'POST' && pathname.endsWith('/messages')) { const input = await body(req); const text = String(input.text || '').trim(); if (!text) return json(res, 400, { error: 'Mensagem vazia' }); const lead = getLead(id); if (!lead) return json(res, 404, { error: 'Lead não encontrado' }); await sendWhatsAppMessage(lead, text); const message = { id: Date.now(), from: 'agent', text, time: new Date().toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' }) }; db.conversations[id].push(message); lead.lastMessage = text; lead.lastAt = new Date().toISOString(); lead.unread = false; await persist(); return json(res, 201, message); }
     }
     if (pathname === '/api/whatsapp/status' && req.method === 'GET') return json(res, 200, { status: whatsapp.status, qr: whatsapp.qr, mode: whatsapp.mode, lastConnectedAt: whatsapp.lastConnectedAt });
     if (pathname === '/api/whatsapp/connect' && req.method === 'POST') { await connectWhatsApp(); return json(res, 200, { status: whatsapp.status, qr: whatsapp.qr, mode: whatsapp.mode }); }
