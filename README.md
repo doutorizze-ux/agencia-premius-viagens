@@ -18,3 +18,5 @@ Crie um recurso do tipo **Dockerfile** apontando para este repositório e exponh
 `BAILEYS_ENABLED=false` deixa o modo demonstração ativo. Para conectar um número real, defina `BAILEYS_ENABLED=true`, monte o volume `/app/data` e abra a tela WhatsApp para ler o QR Code.
 
 O Jev é ativado com `TYPESAFE_API_KEY`. Sem a chave, o sistema mantém uma classificação local de fallback para a demonstração.
+
+O painel possui login por sessão. Defina `ADMIN_EMAIL` e `ADMIN_PASSWORD` no ambiente do Coolify antes do primeiro acesso; nunca publique a senha no repositório.
