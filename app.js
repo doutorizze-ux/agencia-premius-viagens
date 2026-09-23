@@ -7,9 +7,21 @@ const money = (value) => new Intl.NumberFormat('pt-BR', { style: 'currency', cur
 const date = (value) => new Intl.DateTimeFormat('pt-BR', { day: '2-digit', month: 'short' }).format(new Date(`${value}T12:00:00`)).replace('.', '');
 const dateTime = (value) => new Intl.DateTimeFormat('pt-BR', { day: '2-digit', month: 'short', hour: '2-digit', minute: '2-digit' }).format(new Date(value)).replace('.', '');
 
+function parseApiPayload(raw) {
+  try { return JSON.parse(raw); } catch {
+    const start = raw.indexOf('{'); let depth = 0; let quoted = false; let escaped = false;
+    for (let index = start; index < raw.length; index += 1) {
+      const char = raw[index];
+      if (quoted) { if (escaped) escaped = false; else if (char === '\\') escaped = true; else if (char === '"') quoted = false; continue; }
+      if (char === '"') quoted = true; else if (char === '{') depth += 1; else if (char === '}' && --depth === 0) { try { return JSON.parse(raw.slice(start, index + 1)); } catch { break; } }
+    }
+    return { error: 'Resposta inválida do servidor' };
+  }
+}
+
 async function api(path, options = {}) {
   const response = await fetch(path, { headers: { 'Content-Type': 'application/json' }, ...options });
-  const data = await response.json();
+  const data = parseApiPayload(await response.text());
   if (!response.ok) { const error = new Error(data.error || 'Não foi possível concluir a ação'); error.status = response.status; throw error; }
   return data;
 }
