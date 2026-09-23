@@ -19,4 +19,4 @@ Crie um recurso do tipo **Dockerfile** apontando para este repositório e exponh
 
 O Jev é ativado com `TYPESAFE_API_KEY`. Sem a chave, o sistema mantém uma classificação local de fallback para a demonstração.
 
-O painel possui login por sessão. Defina `ADMIN_EMAIL` e `ADMIN_PASSWORD` no ambiente do Coolify antes do primeiro acesso; nunca publique a senha no repositório.
+O painel possui login por sessão. Defina `ADMIN_EMAIL` e `ADMIN_PASSWORD` no ambiente do Coolify quando quiser escolher as credenciais. Se `ADMIN_PASSWORD` ficar vazio, o servidor gera uma senha inicial forte, grava no volume persistente e imprime a credencial uma vez no log de inicialização.

@@ -9,9 +9,10 @@ const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const PORT = Number(process.env.PORT || 3000);
 const DATA_DIR = path.resolve(process.env.DATA_DIR || path.join(__dirname, 'data'));
 const DB_FILE = path.join(DATA_DIR, 'premius.json');
+const ADMIN_PASSWORD_FILE = path.join(DATA_DIR, 'admin-password');
 const AUTH_DIR = path.resolve(process.env.BAILEYS_AUTH_DIR || path.join(DATA_DIR, 'whatsapp-auth'));
 const ADMIN_EMAIL = String(process.env.ADMIN_EMAIL || 'admin@agenciapremius.com').trim().toLowerCase();
-const ADMIN_PASSWORD = process.env.ADMIN_PASSWORD || '';
+let ADMIN_PASSWORD = process.env.ADMIN_PASSWORD || '';
 const SESSION_COOKIE = 'premius_session';
 const sessions = new Map();
 
@@ -47,6 +48,11 @@ let whatsapp = { status: 'disconnected', qr: null, mode: process.env.BAILEYS_ENA
 
 async function loadDb() {
   await mkdir(DATA_DIR, { recursive: true });
+  if (!ADMIN_PASSWORD) {
+    if (existsSync(ADMIN_PASSWORD_FILE)) ADMIN_PASSWORD = (await readFile(ADMIN_PASSWORD_FILE, 'utf8')).trim();
+    if (!ADMIN_PASSWORD) { ADMIN_PASSWORD = crypto.randomBytes(18).toString('base64url'); await writeFile(ADMIN_PASSWORD_FILE, ADMIN_PASSWORD, { encoding: 'utf8', mode: 0o600 }); }
+    console.log(`Login inicial: ${ADMIN_EMAIL} / ${ADMIN_PASSWORD}`);
+  }
   if (existsSync(DB_FILE)) {
     try { db = JSON.parse(await readFile(DB_FILE, 'utf8')); } catch { await persist(); }
   } else await persist();
