@@ -1,0 +1,51 @@
+<!doctype html>
+<html lang="pt-BR">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta name="theme-color" content="#062f3d" />
+    <title>Agência Premius · Central de viagens</title>
+    <link rel="icon" href="/logo.png" />
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700&family=Plus+Jakarta+Sans:wght@600;700;800&display=swap" rel="stylesheet" />
+    <link rel="stylesheet" href="/styles.css" />
+  </head>
+  <body>
+    <div id="app-shell">
+      <aside class="sidebar">
+        <div class="brand">
+          <img src="/logo.png" alt="Agência Premius" />
+          <div><strong>PREMIUS</strong><span>central de viagens</span></div>
+        </div>
+        <div class="workspace-pill"><span class="status-dot"></span><span>Operação ativa</span><button class="icon-button" title="Alternar equipe">⌄</button></div>
+        <nav class="nav" aria-label="Navegação principal">
+          <button class="nav-item active" data-view="dashboard"><span class="nav-icon">⌂</span><span>Visão geral</span></button>
+          <button class="nav-item" data-view="leads"><span class="nav-icon">◒</span><span>Leads</span><b id="nav-leads-count">3</b></button>
+          <button class="nav-item" data-view="excursions"><span class="nav-icon">✦</span><span>Excursões</span></button>
+          <button class="nav-item" data-view="whatsapp"><span class="nav-icon">◉</span><span>WhatsApp</span><i id="nav-wa-dot" class="nav-live"></i></button>
+        </nav>
+        <div class="nav-section-label">ATENDIMENTO</div>
+        <nav class="nav">
+          <button class="nav-item" data-view="calendar"><span class="nav-icon">▦</span><span>Calendário</span></button>
+          <button class="nav-item" data-view="reports"><span class="nav-icon">▤</span><span>Relatórios</span></button>
+        </nav>
+        <div class="sidebar-bottom">
+          <div class="tip-card"><span class="tip-spark">✦</span><strong>Jev ativo</strong><p>Seu copiloto identifica os leads mais quentes.</p><button data-view="leads">Ver leads prioritários →</button></div>
+          <button class="profile"><span class="avatar avatar-lime">EB</span><span><strong>Eduardo Bueno</strong><small>Administrador</small></span><span class="profile-more">•••</span></button>
+        </div>
+      </aside>
+      <main class="main-content">
+        <header class="topbar">
+          <div class="mobile-brand"><img src="/logo.png" alt="Agência Premius" /><span>PREMIUS</span></div>
+          <div class="breadcrumbs"><span>Agência Premius</span><span>/</span><strong id="page-breadcrumb">Visão geral</strong></div>
+          <div class="topbar-actions"><button class="search-button" id="open-search"><span>⌕</span><span>Buscar</span><kbd>⌘ K</kbd></button><button class="icon-button notification" title="Notificações">♢<i></i></button><button class="mobile-menu" id="mobile-menu" aria-label="Abrir menu">☰</button></div>
+        </header>
+        <div id="view-container"></div>
+      </main>
+    </div>
+    <div id="modal-root"></div>
+    <div id="toast-root" aria-live="polite"></div>
+    <script type="module" src="/app.js"></script>
+  </body>
+</html>
