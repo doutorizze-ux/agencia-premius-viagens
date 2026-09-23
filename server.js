@@ -44,7 +44,7 @@ const seed = {
 };
 
 let db = structuredClone(seed);
-let whatsapp = { status: 'disconnected', qr: null, mode: process.env.BAILEYS_ENABLED === 'true' ? 'baileys' : 'demo', lastConnectedAt: null, socket: null };
+let whatsapp = { status: 'disconnected', qr: null, mode: process.env.BAILEYS_ENABLED === 'true' ? 'baileys' : 'demo', lastConnectedAt: null, lastError: null, lastDisconnectCode: null, socket: null };
 
 async function loadDb() {
   await mkdir(DATA_DIR, { recursive: true });
@@ -186,6 +186,7 @@ async function sendWhatsAppMessage(lead, text) {
 
 async function startBaileys() {
   if (whatsapp.mode !== 'baileys') return;
+  if (whatsapp.socket || whatsapp.status === 'connecting') return;
   try {
     const baileys = await import('@whiskeysockets/baileys');
     const pino = (await import('pino')).default;
@@ -199,19 +200,24 @@ async function startBaileys() {
       for (const incoming of messages || []) await upsertWhatsAppLead(incoming);
     });
     socket.ev.on('connection.update', async ({ connection, lastDisconnect, qr }) => {
-      if (qr) whatsapp.qr = await (await import('qrcode')).toDataURL(qr, { width: 280, margin: 1 });
-      if (connection === 'open') { whatsapp.status = 'connected'; whatsapp.qr = null; whatsapp.lastConnectedAt = new Date().toISOString(); }
+      if (qr) { whatsapp.qr = await (await import('qrcode')).toDataURL(qr, { width: 280, margin: 1 }); whatsapp.status = 'connecting'; whatsapp.lastError = null; console.log('Baileys QR gerado'); }
+      if (connection === 'open') { whatsapp.status = 'connected'; whatsapp.qr = null; whatsapp.lastError = null; whatsapp.lastDisconnectCode = null; whatsapp.lastConnectedAt = new Date().toISOString(); console.log('Baileys conectado'); }
       if (connection === 'close') {
-        whatsapp.status = 'disconnected';
+        const code = lastDisconnect?.error?.output?.statusCode || lastDisconnect?.error?.statusCode || null;
+        whatsapp.lastDisconnectCode = code;
+        whatsapp.lastError = lastDisconnect?.error?.message || `Conexão encerrada${code ? ` (${code})` : ''}`;
+        console.warn('Baileys conexão encerrada:', whatsapp.lastError);
+        whatsapp.status = code === baileys.DisconnectReason.loggedOut ? 'logged_out' : 'disconnected';
         whatsapp.qr = null;
         whatsapp.socket = null;
-        const shouldReconnect = lastDisconnect?.error?.output?.statusCode !== baileys.DisconnectReason.loggedOut;
-        if (shouldReconnect) setTimeout(startBaileys, 3000);
+        const shouldReconnect = code !== baileys.DisconnectReason.loggedOut;
+        if (shouldReconnect) setTimeout(() => startBaileys(), 3000);
       }
     });
   } catch (error) {
     console.error('Baileys indisponível:', error.message);
     whatsapp.status = 'error';
+    whatsapp.lastError = error.message;
     whatsapp.qr = null;
     whatsapp.socket = null;
   }
@@ -268,7 +274,7 @@ async function route(req, res) {
       if (req.method === 'GET') return json(res, 200, db.conversations[id]);
       if (req.method === 'POST' && pathname.endsWith('/messages')) { const input = await body(req); const text = String(input.text || '').trim(); if (!text) return json(res, 400, { error: 'Mensagem vazia' }); const lead = getLead(id); if (!lead) return json(res, 404, { error: 'Lead não encontrado' }); await sendWhatsAppMessage(lead, text); const message = { id: Date.now(), from: 'agent', text, time: new Date().toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' }) }; db.conversations[id].push(message); lead.lastMessage = text; lead.lastAt = new Date().toISOString(); lead.unread = false; await persist(); return json(res, 201, message); }
     }
-    if (pathname === '/api/whatsapp/status' && req.method === 'GET') return json(res, 200, { status: whatsapp.status, qr: whatsapp.qr, mode: whatsapp.mode, lastConnectedAt: whatsapp.lastConnectedAt });
+    if (pathname === '/api/whatsapp/status' && req.method === 'GET') return json(res, 200, { status: whatsapp.status, qr: whatsapp.qr, mode: whatsapp.mode, lastConnectedAt: whatsapp.lastConnectedAt, lastError: whatsapp.lastError, lastDisconnectCode: whatsapp.lastDisconnectCode });
     if (pathname === '/api/whatsapp/connect' && req.method === 'POST') { await connectWhatsApp(); return json(res, 200, { status: whatsapp.status, qr: whatsapp.qr, mode: whatsapp.mode }); }
     if (pathname === '/api/whatsapp/qr' && req.method === 'GET') return json(res, 200, { status: whatsapp.status, qr: whatsapp.qr, mode: whatsapp.mode });
     if (pathname === '/api/whatsapp/disconnect' && req.method === 'POST') { try { await whatsapp.socket?.logout(); } catch {} whatsapp.status = 'disconnected'; whatsapp.qr = null; whatsapp.socket = null; return json(res, 200, { status: whatsapp.status }); }
