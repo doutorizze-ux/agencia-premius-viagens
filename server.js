@@ -1,6 +1,6 @@
 import http from 'node:http';
 import crypto from 'node:crypto';
-import { readFile, writeFile, mkdir } from 'node:fs/promises';
+import { readFile, writeFile, mkdir, rm } from 'node:fs/promises';
 import { existsSync } from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -44,7 +44,7 @@ const seed = {
 };
 
 let db = structuredClone(seed);
-let whatsapp = { status: 'disconnected', qr: null, mode: process.env.BAILEYS_ENABLED === 'true' ? 'baileys' : 'demo', lastConnectedAt: null, lastError: null, lastDisconnectCode: null, socket: null };
+let whatsapp = { status: 'disconnected', qr: null, mode: process.env.BAILEYS_ENABLED === 'true' ? 'baileys' : 'demo', lastConnectedAt: null, lastError: null, lastDisconnectCode: null, socket: null, reconnectTimer: null };
 
 async function loadDb() {
   await mkdir(DATA_DIR, { recursive: true });
@@ -211,7 +211,7 @@ async function startBaileys() {
         whatsapp.qr = null;
         whatsapp.socket = null;
         const shouldReconnect = code !== baileys.DisconnectReason.loggedOut;
-        if (shouldReconnect) setTimeout(() => startBaileys(), 3000);
+        if (shouldReconnect) whatsapp.reconnectTimer = setTimeout(() => startBaileys(), 3000);
       }
     });
   } catch (error) {
@@ -228,6 +228,14 @@ async function connectWhatsApp() {
   whatsapp.status = 'connecting';
   whatsapp.qr = await (await import('qrcode')).toDataURL(`premius-demo-${Date.now()}`, { width: 280, margin: 1 });
   setTimeout(() => { if (whatsapp.status === 'connecting') { whatsapp.status = 'connected'; whatsapp.qr = null; whatsapp.lastConnectedAt = new Date().toISOString(); } }, 4500);
+}
+
+async function resetWhatsAppSession() {
+  if (whatsapp.reconnectTimer) clearTimeout(whatsapp.reconnectTimer);
+  try { await whatsapp.socket?.logout(); } catch {}
+  whatsapp.socket = null; whatsapp.qr = null; whatsapp.status = 'disconnected'; whatsapp.lastError = null; whatsapp.lastDisconnectCode = null;
+  await rm(AUTH_DIR, { recursive: true, force: true });
+  await startBaileys();
 }
 
 async function route(req, res) {
@@ -278,6 +286,7 @@ async function route(req, res) {
     if (pathname === '/api/whatsapp/connect' && req.method === 'POST') { await connectWhatsApp(); return json(res, 200, { status: whatsapp.status, qr: whatsapp.qr, mode: whatsapp.mode }); }
     if (pathname === '/api/whatsapp/qr' && req.method === 'GET') return json(res, 200, { status: whatsapp.status, qr: whatsapp.qr, mode: whatsapp.mode });
     if (pathname === '/api/whatsapp/disconnect' && req.method === 'POST') { try { await whatsapp.socket?.logout(); } catch {} whatsapp.status = 'disconnected'; whatsapp.qr = null; whatsapp.socket = null; return json(res, 200, { status: whatsapp.status }); }
+    if (pathname === '/api/whatsapp/reset' && req.method === 'POST') { await resetWhatsAppSession(); return json(res, 200, { status: whatsapp.status, qr: whatsapp.qr, mode: whatsapp.mode }); }
     return serveStatic(pathname, res);
   } catch (error) { console.error(error); return json(res, 500, { error: 'Erro interno', details: error.message }); }
 }
