@@ -137,7 +137,18 @@ async function jevAnalysis(lead) {
     })
   });
   if (!response.ok) throw new Error(`TypeSafe HTTP ${response.status}`);
-  const result = await response.json();
+  const raw = await response.text();
+  let result;
+  try { result = JSON.parse(raw); } catch {
+    const start = raw.indexOf('{'); let depth = 0; let quoted = false; let escaped = false; let end = -1;
+    for (let index = start; index < raw.length; index += 1) {
+      const char = raw[index];
+      if (quoted) { if (escaped) escaped = false; else if (char === '\\') escaped = true; else if (char === '"') quoted = false; continue; }
+      if (char === '"') quoted = true; else if (char === '{') depth += 1; else if (char === '}' && --depth === 0) { end = index + 1; break; }
+    }
+    if (start < 0 || end < 0) throw new Error('Resposta inválida do Jev');
+    result = JSON.parse(raw.slice(start, end));
+  }
   const temp = result.answers?.temperature;
   const intent = result.answers?.intent;
   return { temperature: temp?.choice || 'warm', intent: intent?.choice || 'question', confidence: Math.max(temp?.confidence || 0, intent?.confidence || 0), needsFollowup: Boolean(result.answers?.needsFollowup?.noul), source: 'jev', model: result.model };
@@ -292,6 +303,7 @@ async function route(req, res) {
       const lead = getLead(leadMatch[1]); if (!lead) return json(res, 404, { error: 'Lead não encontrado' });
       if (req.method === 'PATCH') { const input = await body(req); if (input.stage) lead.stage = input.stage; if (input.unread !== undefined) lead.unread = input.unread; await persist(); return json(res, 200, lead); }
       if (req.method === 'POST' && leadMatch[2] === 'analyze') { try { lead.analysis = await jevAnalysis(lead); lead.score = Math.round((lead.analysis.confidence || 0.6) * 100); lead.tag = lead.analysis.temperature === 'hot' ? 'Alta intenção' : lead.analysis.temperature === 'warm' ? 'Em avaliação' : 'Nutrição'; await persist(); return json(res, 200, lead); } catch (error) { return json(res, 502, { error: 'Não foi possível consultar o Jev', details: error.message }); } }
+      if (req.method === 'DELETE' && !leadMatch[2]) { db.leads = db.leads.filter((item) => item.id !== lead.id); delete db.conversations[lead.id]; await persist(); return json(res, 200, { ok: true, id: lead.id }); }
     }
     const convMatch = pathname.match(/^\/api\/conversations\/([^/]+)(?:\/messages)?$/);
     if (convMatch) {
