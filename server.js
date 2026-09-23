@@ -269,6 +269,23 @@ async function route(req, res) {
       const input = await body(req); const excursion = { id: `exc-${Date.now()}`, title: input.title || 'Nova excursão', destination: input.destination || '', date: input.date || new Date().toISOString().slice(0, 10), endDate: input.endDate || input.date, price: Number(input.price || 0), seats: Number(input.seats || 20), reserved: 0, status: 'Vendas abertas', color: input.color || 'blue', description: input.description || '' };
       db.excursions.unshift(excursion); await persist(); return json(res, 201, excursion);
     }
+    const excursionMatch = pathname.match(/^\/api\/excursions\/([^/]+)$/);
+    if (excursionMatch) {
+      const excursion = getExcursion(excursionMatch[1]);
+      if (!excursion) return json(res, 404, { error: 'Excursão não encontrada' });
+      if (req.method === 'PATCH') {
+        const input = await body(req);
+        for (const field of ['title', 'destination', 'date', 'endDate', 'description', 'status', 'color']) if (input[field] !== undefined) excursion[field] = String(input[field]);
+        for (const field of ['price', 'seats', 'reserved']) if (input[field] !== undefined) excursion[field] = Number(input[field]);
+        if (excursion.seats < excursion.reserved) return json(res, 400, { error: 'A lotação não pode ser menor que os lugares reservados' });
+        await persist(); return json(res, 200, excursion);
+      }
+      if (req.method === 'DELETE') {
+        db.excursions = db.excursions.filter((item) => item.id !== excursion.id);
+        db.leads.forEach((lead) => { if (lead.excursionId === excursion.id) lead.excursionId = null; });
+        await persist(); return json(res, 200, { ok: true, id: excursion.id });
+      }
+    }
     if (pathname === '/api/leads' && req.method === 'GET') return json(res, 200, db.leads.map((lead) => ({ ...lead, excursion: getExcursion(lead.excursionId)?.title || 'Sem excursão' })));
     const leadMatch = pathname.match(/^\/api\/leads\/([^/]+)(?:\/(analyze))?$/);
     if (leadMatch) {
