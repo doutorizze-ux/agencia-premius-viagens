@@ -194,7 +194,7 @@ function openExcursionModal(item = null) {
 }
 
 function openDeleteExcursionConfirm(item) {
-  $('#modal-root').innerHTML = `<div class="modal-backdrop"><div class="modal confirm-modal"><div class="modal-header"><h2>Excluir excursão?</h2><button type="button" data-action="close-modal">×</button></div><div class="modal-body"><p style="margin:0;color:var(--muted);line-height:1.55">Você está prestes a excluir <b style="color:var(--ink)">${esc(item.title)}</b>. Os leads vinculados serão mantidos, mas ficarão sem roteiro associado.</p></div><div class="modal-footer"><button type="button" class="secondary-button" data-action="close-modal">Cancelar</button><button type="button" class="danger-button" style="margin-left:0;margin-right:0" data-action="confirm-delete-excursion" data-id="${item.id}">Excluir definitivamente</button></div></div></div>`;
+  $('#modal-root').innerHTML = `<div class="modal-backdrop"><div class="modal confirm-modal"><div class="modal-header"><h2>Excluir excursão?</h2><button type="button" data-action="close-modal">×</button></div><div class="modal-body"><p style="margin:0;color:var(--muted);line-height:1.55">Você está prestes a excluir <b style="color:var(--ink)">${esc(item.title)}</b>. O histórico relacionado também será limpo: passageiros, leads vinculados e conversas.</p></div><div class="modal-footer"><button type="button" class="secondary-button" data-action="close-modal">Cancelar</button><button type="button" class="danger-button" style="margin-left:0;margin-right:0" data-action="confirm-delete-excursion" data-id="${item.id}">Excluir definitivamente</button></div></div></div>`;
 }
 
 function openDeleteLeadConfirm(lead) {
@@ -243,7 +243,7 @@ document.addEventListener('click', async (event) => {
     }
     if (type === 'confirm-delete-excursion') {
       const item = state.excursions.find((excursion) => excursion.id === action.dataset.id);
-      if (item) { action.disabled = true; action.textContent = 'Excluindo…'; await api(`/api/excursions/${item.id}`, { method: 'DELETE' }); $('#modal-root').innerHTML = ''; await loadData(); toast('Excursão excluída'); renderExcursions(); }
+      if (item) { action.disabled = true; action.textContent = 'Excluindo…'; const result = await api(`/api/excursions/${item.id}`, { method: 'DELETE' }); $('#modal-root').innerHTML = ''; await loadData(); toast(`Excursão excluída · ${result.removedPassengers || 0} passageiros e ${result.removedLeads || 0} leads limpos`); renderExcursions(); }
     }
     if (type === 'delete-passenger') {
       const item = state.passengers.find((passenger) => passenger.id === action.dataset.id);

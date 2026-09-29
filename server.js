@@ -338,10 +338,14 @@ async function route(req, res) {
         await persist(); return json(res, 200, excursion);
       }
       if (req.method === 'DELETE') {
+        const relatedLeads = db.leads.filter((lead) => lead.excursionId === excursion.id);
+        const relatedLeadIds = new Set(relatedLeads.map((lead) => lead.id));
+        db.leads = db.leads.filter((lead) => !relatedLeadIds.has(lead.id));
+        relatedLeadIds.forEach((leadId) => { delete db.conversations[leadId]; });
+        const removedPassengers = db.passengers.filter((passenger) => passenger.excursionId === excursion.id).length;
         db.excursions = db.excursions.filter((item) => item.id !== excursion.id);
         db.passengers = db.passengers.filter((passenger) => passenger.excursionId !== excursion.id);
-        db.leads.forEach((lead) => { if (lead.excursionId === excursion.id) lead.excursionId = null; });
-        await persist(); return json(res, 200, { ok: true, id: excursion.id });
+        await persist(); return json(res, 200, { ok: true, id: excursion.id, removedLeads: relatedLeads.length, removedPassengers });
       }
     }
     if (pathname === '/api/leads' && req.method === 'GET') return json(res, 200, db.leads.map((lead) => ({ ...lead, excursion: getExcursion(lead.excursionId)?.title || 'Sem excursão' })));
