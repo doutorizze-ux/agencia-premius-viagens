@@ -30,6 +30,7 @@ const seed = {
     { id: 'lead-004', name: 'João Pedro', phone: '5562989988776', avatar: 'JP', excursionId: 'exc-003', source: 'Facebook', lastMessage: 'Vou confirmar com a família e te aviso.', lastAt: '2026-09-22T15:10:00-03:00', stage: 'Aguardando', tag: 'Follow-up', score: 48, unread: false, analysis: { temperature: 'cold', intent: 'question', confidence: 0.67 } },
     { id: 'lead-005', name: 'Bianca Souza', phone: '5562992233445', avatar: 'BS', excursionId: 'exc-001', source: 'WhatsApp', lastMessage: 'Fechamos duas poltronas! Como faço o pagamento?', lastAt: '2026-09-22T13:48:00-03:00', stage: 'Fechado', tag: 'Venda ganha', score: 98, unread: false, analysis: { temperature: 'hot', intent: 'booking', confidence: 0.98 } }
   ],
+  passengers: [],
   conversations: {
     'lead-001': [
       { id: 1, from: 'lead', text: 'Oi, bom dia! Vi a excursão para Caldas Novas.', time: '08:38' },
@@ -56,6 +57,10 @@ async function loadDb() {
   if (existsSync(DB_FILE)) {
     try { db = JSON.parse(await readFile(DB_FILE, 'utf8')); } catch { await persist(); }
   } else await persist();
+  if (!Array.isArray(db.excursions)) db.excursions = [];
+  if (!Array.isArray(db.leads)) db.leads = [];
+  if (!Array.isArray(db.passengers)) db.passengers = [];
+  if (!db.conversations || typeof db.conversations !== 'object') db.conversations = {};
 }
 
 async function persist() {
@@ -280,6 +285,47 @@ async function route(req, res) {
       const input = await body(req); const excursion = { id: `exc-${Date.now()}`, title: input.title || 'Nova excursão', destination: input.destination || '', date: input.date || new Date().toISOString().slice(0, 10), endDate: input.endDate || input.date, price: Number(input.price || 0), seats: Number(input.seats || 20), reserved: 0, status: 'Vendas abertas', color: input.color || 'blue', description: input.description || '' };
       db.excursions.unshift(excursion); await persist(); return json(res, 201, excursion);
     }
+    if (pathname === '/api/passengers' && req.method === 'GET') {
+      const excursionId = url.searchParams.get('excursionId');
+      const passengers = db.passengers.filter((passenger) => !excursionId || passenger.excursionId === excursionId).map((passenger) => ({ ...passenger, excursion: getExcursion(passenger.excursionId)?.title || 'Sem excursão' }));
+      return json(res, 200, passengers);
+    }
+    if (pathname === '/api/passengers' && req.method === 'POST') {
+      const input = await body(req);
+      const excursion = getExcursion(String(input.excursionId || ''));
+      const name = String(input.name || '').trim();
+      const phone = String(input.phone || '').trim();
+      const cpf = String(input.cpf || '').trim();
+      const address = String(input.address || '').trim();
+      const paymentStatus = ['Pago', 'A pagar', 'Financiamento'].includes(input.paymentStatus) ? input.paymentStatus : 'A pagar';
+      if (!excursion) return json(res, 400, { error: 'Escolha uma excursão válida' });
+      if (!name || !phone || !cpf || !address) return json(res, 400, { error: 'Preencha nome, celular, CPF e endereço' });
+      if (Number(excursion.reserved || 0) >= Number(excursion.seats || 0)) return json(res, 409, { error: 'Esta excursão está lotada' });
+      const passenger = { id: `pass-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`, excursionId: excursion.id, name, phone, cpf, address, paymentStatus, createdAt: new Date().toISOString() };
+      db.passengers.unshift(passenger);
+      excursion.reserved = Number(excursion.reserved || 0) + 1;
+      await persist();
+      return json(res, 201, { ...passenger, excursion: excursion.title });
+    }
+    const passengerMatch = pathname.match(/^\/api\/passengers\/([^/]+)$/);
+    if (passengerMatch) {
+      const passenger = db.passengers.find((item) => item.id === passengerMatch[1]);
+      if (!passenger) return json(res, 404, { error: 'Passageiro não encontrado' });
+      if (req.method === 'DELETE') {
+        db.passengers = db.passengers.filter((item) => item.id !== passenger.id);
+        const excursion = getExcursion(passenger.excursionId);
+        if (excursion) excursion.reserved = Math.max(0, Number(excursion.reserved || 0) - 1);
+        await persist();
+        return json(res, 200, { ok: true, id: passenger.id });
+      }
+      if (req.method === 'PATCH') {
+        const input = await body(req);
+        if (input.paymentStatus && ['Pago', 'A pagar', 'Financiamento'].includes(input.paymentStatus)) passenger.paymentStatus = input.paymentStatus;
+        for (const field of ['name', 'phone', 'cpf', 'address']) if (input[field] !== undefined) passenger[field] = String(input[field]).trim();
+        await persist();
+        return json(res, 200, { ...passenger, excursion: getExcursion(passenger.excursionId)?.title || 'Sem excursão' });
+      }
+    }
     const excursionMatch = pathname.match(/^\/api\/excursions\/([^/]+)$/);
     if (excursionMatch) {
       const excursion = getExcursion(excursionMatch[1]);
@@ -293,6 +339,7 @@ async function route(req, res) {
       }
       if (req.method === 'DELETE') {
         db.excursions = db.excursions.filter((item) => item.id !== excursion.id);
+        db.passengers = db.passengers.filter((passenger) => passenger.excursionId !== excursion.id);
         db.leads.forEach((lead) => { if (lead.excursionId === excursion.id) lead.excursionId = null; });
         await persist(); return json(res, 200, { ok: true, id: excursion.id });
       }

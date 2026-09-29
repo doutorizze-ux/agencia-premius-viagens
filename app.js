@@ -1,4 +1,4 @@
-const state = { view: 'dashboard', dashboard: null, leads: [], excursions: [], selectedLead: null, conversation: [], whatsapp: null, leadFilter: 'Todos', excursionFilter: 'Todos os roteiros', user: null, calendarMonth: new Date('2026-09-01T12:00:00') };
+const state = { view: 'dashboard', dashboard: null, leads: [], excursions: [], passengers: [], selectedLead: null, passengerExcursionId: '', conversation: [], whatsapp: null, leadFilter: 'Todos', excursionFilter: 'Todos os roteiros', user: null, calendarMonth: new Date('2026-09-01T12:00:00') };
 let waPollTimer = null;
 
 const $ = (selector) => document.querySelector(selector);
@@ -47,7 +47,7 @@ function toast(message, error = false) {
 
 function setActiveNav() {
   document.querySelectorAll('.nav-item').forEach((item) => item.classList.toggle('active', item.dataset.view === state.view));
-  const labels = { dashboard: 'Visão geral', leads: 'Leads', excursions: 'Excursões', whatsapp: 'WhatsApp', calendar: 'Calendário', reports: 'Relatórios' };
+  const labels = { dashboard: 'Visão geral', leads: 'Leads', excursions: 'Excursões', passengers: 'Reservas', whatsapp: 'WhatsApp', calendar: 'Calendário', reports: 'Relatórios' };
   $('#page-breadcrumb').textContent = labels[state.view] || 'Visão geral';
   document.querySelector('.sidebar')?.classList.remove('open');
 }
@@ -108,6 +108,25 @@ function renderExcursions() {
   renderShell(`${pageHeading('PRODUTO & OPERAÇÃO', 'Suas excursões', 'Roteiros, lotação e vendas em um só lugar.', '<button class="primary-button" data-action="new-excursion">＋ Nova excursão</button>')}<div class="toolbar"><div class="view-tabs">${filters.map((item) => `<button class="${state.excursionFilter === item ? 'active' : ''}" data-excursion-filter="${item}">${item}</button>`).join('')}</div><button class="secondary-button" style="margin-left:auto" data-action="export-excursions">⌗ Exportar</button></div><div class="excursions-grid">${cards || empty}<button class="empty-card" data-action="new-excursion"><div><span>＋</span><strong>Criar nova excursão</strong><p>Adicione destino, datas e lotação.</p></div></button></div>`);
 }
 
+function paymentBadge(status) {
+  const cls = status === 'Pago' ? 'paid' : status === 'Financiamento' ? 'financing' : 'pending';
+  return `<span class="payment-badge ${cls}">${esc(status || 'A pagar')}</span>`;
+}
+
+function renderPassengers() {
+  const availableExcursions = state.excursions.filter((item) => item.status !== 'Encerrada');
+  if (!state.passengerExcursionId || !availableExcursions.some((item) => item.id === state.passengerExcursionId)) state.passengerExcursionId = availableExcursions[0]?.id || '';
+  const selected = availableExcursions.find((item) => item.id === state.passengerExcursionId);
+  const passengers = selected ? state.passengers.filter((item) => item.excursionId === selected.id) : [];
+  const paid = passengers.filter((item) => item.paymentStatus === 'Pago').length;
+  const pending = passengers.filter((item) => item.paymentStatus === 'A pagar').length;
+  const financing = passengers.filter((item) => item.paymentStatus === 'Financiamento').length;
+  const options = availableExcursions.map((item) => `<option value="${esc(item.id)}" ${item.id === selected?.id ? 'selected' : ''}>${esc(item.title)} · ${item.reserved}/${item.seats} lugares</option>`).join('');
+  const rows = passengers.map((item) => `<div class="passenger-row"><div class="passenger-person"><span class="lead-avatar ${item.paymentStatus === 'Pago' ? '' : item.paymentStatus === 'Financiamento' ? 'purple' : 'blue'}">${esc(item.name.split(/\s+/).map((part) => part[0]).slice(0, 2).join('').toUpperCase())}</span><span><strong>${esc(item.name)}</strong><small>${esc(item.phone)} · CPF ${esc(item.cpf)}</small><small>${esc(item.address)}</small></span></div><div class="passenger-payment">${paymentBadge(item.paymentStatus)}<small>Cadastrado em ${dateTime(item.createdAt)}</small></div><button class="danger-button passenger-delete" type="button" data-action="delete-passenger" data-id="${esc(item.id)}">Excluir</button></div>`).join('');
+  const content = selected ? `<div class="passenger-layout"><section class="panel passenger-form-panel"><div class="panel-header"><div class="panel-title"><h2>Adicionar passageiro</h2><span class="muted">Uma vaga por cadastro</span></div></div><form id="passenger-form" class="passenger-form"><label class="form-label">Excursão<select class="form-control" id="passenger-excursion" name="excursionId" required>${options || '<option value="">Nenhuma excursão disponível</option>'}</select></label><label class="form-label">Nome completo<input class="form-control" name="name" placeholder="Ex.: Ana Souza" autocomplete="name" required /></label><label class="form-label">Celular<input class="form-control" name="phone" placeholder="(62) 99999-9999" autocomplete="tel" required /></label><label class="form-label">CPF<input class="form-control" name="cpf" placeholder="000.000.000-00" inputmode="numeric" required /></label><label class="form-label">Endereço<input class="form-control" name="address" placeholder="Rua, número, bairro e cidade" autocomplete="street-address" required /></label><label class="form-label">Pagamento<select class="form-control" name="paymentStatus"><option>Pago</option><option selected>A pagar</option><option>Financiamento</option></select></label><button class="primary-button" type="button" data-action="save-passenger">＋ Salvar passageiro</button></form></section><section class="panel passenger-list-panel"><div class="panel-header"><div class="panel-title"><h2>${esc(selected.title)}</h2><span class="muted">${passengers.length} passageiro${passengers.length === 1 ? '' : 's'} · ${selected.reserved}/${selected.seats} lugares ocupados</span></div><button class="icon-button" title="Atualizar" data-action="refresh-passengers">↻</button></div><div class="passenger-summary"><div class="passenger-summary-card"><strong>${paid}</strong><span>Pagos</span></div><div class="passenger-summary-card"><strong>${pending}</strong><span>A pagar</span></div><div class="passenger-summary-card"><strong>${financing}</strong><span>Financiamento</span></div></div><div class="passenger-list">${rows || '<div class="empty-card" style="border:0;min-height:230px"><div><span>♙</span><strong>Nenhum passageiro cadastrado</strong><p>Preencha o formulário para reservar a primeira vaga.</p></div></div>'}</div></section></div>` : `<div class="empty-card"><div><span>♙</span><strong>Nenhuma excursão disponível</strong><p>Cadastre uma excursão antes de adicionar passageiros.</p></div></div>`;
+  renderShell(`${pageHeading('VENDAS & RESERVAS', 'Passageiros', 'Escolha a excursão, registre os viajantes e acompanhe os pagamentos.', '<button class="secondary-button" data-action="refresh-passengers">↻ Atualizar</button>')}${content}`);
+}
+
 async function renderWhatsApp() {
   if (!state.whatsapp) state.whatsapp = await api('/api/whatsapp/status');
   if (!state.selectedLead) state.selectedLead = state.leads.find((lead) => lead.source === 'WhatsApp') || state.leads[0];
@@ -150,13 +169,22 @@ function renderReports() {
   renderShell(`${pageHeading('INTELIGÊNCIA DA OPERAÇÃO', 'Relatórios', 'Decisões melhores com uma leitura simples dos seus números.', '<div style="display:flex;gap:8px"><button class="secondary-button" data-action="refresh-reports">↻ Atualizar</button><button class="primary-button" data-action="export-report">⇩ Exportar CSV</button></div>')}<div class="report-period"><span>Período analisado</span><b>Todos os dados cadastrados</b><span class="report-live">● Atualizado agora</span></div><div class="stats-grid report-stats">${metricCard('R$', 'purple', 'Receita estimada', money(revenue), 'reservas confirmadas')}${metricCard('◒', 'lime', 'Conversão de leads', `${conversion}%`, `${closed} vendas fechadas`)}${metricCard('♧', 'orange', 'Ocupação geral', `${occupancy}%`, `${reserved} lugares reservados`)}${metricCard('✦', 'blue', 'Ticket médio', money(closed ? revenue / closed : 0), 'por venda fechada')}</div><div class="reports-grid"><section class="panel report-panel"><div class="panel-header"><div class="panel-title"><h2>Desempenho por excursão</h2><span class="muted">receita potencial</span></div></div><div class="report-table-wrap"><table class="report-table"><thead><tr><th>Roteiro</th><th>Saída</th><th>Ocupação</th><th>Receita</th></tr></thead><tbody>${ranking.map((item) => `<tr data-action="edit-excursion" data-id="${item.id}" style="cursor:pointer"><td><b>${esc(item.title)}</b><small>${esc(item.destination)}</small></td><td>${date(item.date)}</td><td><span class="report-progress"><i style="width:${Math.min(100, item.reserved / Math.max(1, item.seats) * 100)}%"></i></span><small>${item.reserved}/${item.seats}</small></td><td><b>${money(item.reserved * item.price)}</b></td></tr>`).join('') || '<tr><td colspan="4">Nenhum dado ainda.</td></tr>'}</tbody></table></div></section><section class="panel report-panel"><div class="panel-header"><div class="panel-title"><h2>Origem dos leads</h2><span class="muted">volume por canal</span></div></div><div class="source-list">${sources.map((item) => `<div class="source-row"><div><b>${esc(item.source)}</b><small>${item.total} lead${item.total === 1 ? '' : 's'}</small></div><div class="source-bar"><i style="width:${item.total / maxSource * 100}%"></i></div><strong>${Math.round(item.total / Math.max(1, totalLeads) * 100)}%</strong></div>`).join('') || '<div class="empty-card" style="border:0;min-height:170px"><div><span>◒</span><strong>Sem leads</strong><p>Os canais aparecerão aqui.</p></div></div>'}</div></section></div>`);
 }
 
-async function loadData() { [state.dashboard, state.leads, state.excursions] = await Promise.all([api('/api/dashboard'), api('/api/leads'), api('/api/excursions')]); state.dashboard = state.dashboard; $('#nav-leads-count').textContent = state.leads.filter((lead) => lead.unread).length; }
-async function navigate(view) { if (view !== 'whatsapp') clearTimeout(waPollTimer); state.view = view; if (view === 'dashboard') renderDashboard(); else if (view === 'leads') renderLeads(); else if (view === 'excursions') renderExcursions(); else if (view === 'whatsapp') { state.conversation = []; await renderWhatsApp(); } else if (view === 'calendar') renderCalendar(); else if (view === 'reports') renderReports(); }
+async function loadData() { [state.dashboard, state.leads, state.excursions, state.passengers] = await Promise.all([api('/api/dashboard'), api('/api/leads'), api('/api/excursions'), api('/api/passengers')]); state.dashboard = state.dashboard; $('#nav-leads-count').textContent = state.leads.filter((lead) => lead.unread).length; }
+async function navigate(view) { if (view !== 'whatsapp') clearTimeout(waPollTimer); state.view = view; if (view === 'dashboard') renderDashboard(); else if (view === 'leads') renderLeads(); else if (view === 'excursions') renderExcursions(); else if (view === 'passengers') renderPassengers(); else if (view === 'whatsapp') { state.conversation = []; await renderWhatsApp(); } else if (view === 'calendar') renderCalendar(); else if (view === 'reports') renderReports(); }
 
 async function saveExcursion(form) {
   const input = Object.fromEntries(new FormData(form).entries()); const id = input.id; delete input.id;
   await api(id ? `/api/excursions/${id}` : '/api/excursions', { method: id ? 'PATCH' : 'POST', body: JSON.stringify(input) });
   $('#modal-root').innerHTML = ''; await loadData(); toast(id ? 'Excursão atualizada' : 'Excursão criada com sucesso'); renderExcursions();
+}
+
+async function savePassenger(form) {
+  const input = Object.fromEntries(new FormData(form).entries());
+  await api('/api/passengers', { method: 'POST', body: JSON.stringify(input) });
+  state.passengerExcursionId = input.excursionId;
+  await loadData();
+  toast('Passageiro adicionado à excursão');
+  renderPassengers();
 }
 
 function openExcursionModal(item = null) {
@@ -171,6 +199,10 @@ function openDeleteExcursionConfirm(item) {
 
 function openDeleteLeadConfirm(lead) {
   $('#modal-root').innerHTML = `<div class="modal-backdrop"><div class="modal confirm-modal"><div class="modal-header"><h2>Excluir lead?</h2><button type="button" data-action="close-modal">×</button></div><div class="modal-body"><p style="margin:0;color:var(--muted);line-height:1.55">Excluir <b style="color:var(--ink)">${esc(lead.name)}</b> removerá também o histórico desta conversa. Essa ação não pode ser desfeita.</p></div><div class="modal-footer"><button type="button" class="secondary-button" data-action="close-modal">Cancelar</button><button type="button" class="danger-button" style="margin-left:0;margin-right:0" data-action="confirm-delete-lead" data-id="${lead.id}">Excluir definitivamente</button></div></div></div>`;
+}
+
+function openDeletePassengerConfirm(passenger) {
+  $('#modal-root').innerHTML = `<div class="modal-backdrop"><div class="modal confirm-modal"><div class="modal-header"><h2>Excluir passageiro?</h2><button type="button" data-action="close-modal">×</button></div><div class="modal-body"><p style="margin:0;color:var(--muted);line-height:1.55">Excluir <b style="color:var(--ink)">${esc(passenger.name)}</b> removerá esta reserva e devolverá a vaga para a excursão.</p></div><div class="modal-footer"><button type="button" class="secondary-button" data-action="close-modal">Cancelar</button><button type="button" class="danger-button" style="margin-left:0;margin-right:0" data-action="confirm-delete-passenger" data-id="${esc(passenger.id)}">Excluir definitivamente</button></div></div></div>`;
 }
 
 function openLeadModal() { $('#modal-root').innerHTML = `<div class="modal-backdrop"><div class="modal"><div class="modal-header"><h2>Cadastrar lead</h2><button data-action="close-modal">×</button></div><div class="modal-body"><p class="muted" style="margin:0">O cadastro manual estará conectado à agenda de atendimento na próxima etapa. Por enquanto, a central está recebendo leads do WhatsApp e das redes sociais automaticamente.</p></div><div class="modal-footer"><button class="primary-button" data-action="close-modal">Entendi</button></div></div></div>`; }
@@ -193,6 +225,7 @@ document.addEventListener('click', async (event) => {
   try {
     if (type === 'new-excursion') openExcursionModal();
     if (type === 'save-excursion') { action.disabled = true; action.textContent = 'Salvando…'; await saveExcursion($('#excursion-form')); }
+    if (type === 'save-passenger') { action.disabled = true; action.textContent = 'Salvando…'; await savePassenger($('#passenger-form')); }
     if (type === 'new-lead') openLeadModal();
     if (type === 'close-modal') $('#modal-root').innerHTML = '';
     if (type === 'refresh') { await loadData(); toast('Leads atualizados'); if (state.view === 'leads') renderLeads(); }
@@ -212,6 +245,15 @@ document.addEventListener('click', async (event) => {
       const item = state.excursions.find((excursion) => excursion.id === action.dataset.id);
       if (item) { action.disabled = true; action.textContent = 'Excluindo…'; await api(`/api/excursions/${item.id}`, { method: 'DELETE' }); $('#modal-root').innerHTML = ''; await loadData(); toast('Excursão excluída'); renderExcursions(); }
     }
+    if (type === 'delete-passenger') {
+      const item = state.passengers.find((passenger) => passenger.id === action.dataset.id);
+      if (item) openDeletePassengerConfirm(item);
+    }
+    if (type === 'confirm-delete-passenger') {
+      const item = state.passengers.find((passenger) => passenger.id === action.dataset.id);
+      if (item) { action.disabled = true; action.textContent = 'Excluindo…'; await api(`/api/passengers/${item.id}`, { method: 'DELETE' }); $('#modal-root').innerHTML = ''; await loadData(); toast('Passageiro excluído e vaga liberada'); renderPassengers(); }
+    }
+    if (type === 'refresh-passengers') { action.disabled = true; await loadData(); renderPassengers(); toast('Reservas atualizadas'); }
     if (type === 'export-excursions') {
       const rows = [['Roteiro', 'Destino', 'Saida', 'Retorno', 'Status', 'Lugares', 'Reservados', 'Valor por pessoa'], ...state.excursions.map((item) => [item.title, item.destination, item.date, item.endDate || '', item.status, item.seats, item.reserved, item.price])];
       const csv = rows.map((row) => row.map((value) => `"${String(value ?? '').replaceAll('"', '""')}"`).join(';')).join('\n');
@@ -228,12 +270,14 @@ document.addEventListener('click', async (event) => {
 });
 
 document.addEventListener('change', async (event) => {
+  if (event.target.id === 'passenger-excursion') { state.passengerExcursionId = event.target.value; renderPassengers(); return; }
   if (event.target.id === 'lead-stage' && state.selectedLead) { try { const updated = await api(`/api/leads/${state.selectedLead.id}`, { method: 'PATCH', body: JSON.stringify({ stage: event.target.value }) }); state.selectedLead = updated; state.leads = state.leads.map((lead) => lead.id === updated.id ? { ...lead, ...updated } : lead); toast('Etapa atualizada'); } catch (error) { toast(error.message, true); } }
 });
 
 document.addEventListener('submit', async (event) => {
   if (event.target.id === 'login-form') { event.preventDefault(); await login(Object.fromEntries(new FormData(event.target).entries())); return; }
   if (event.target.id === 'excursion-form') { event.preventDefault(); try { await saveExcursion(event.target); } catch (error) { toast(error.message, true); } }
+  if (event.target.id === 'passenger-form') { event.preventDefault(); try { await savePassenger(event.target); } catch (error) { toast(error.message, true); } }
   if (event.target.id === 'compose-form') { event.preventDefault(); const input = $('#message-input'); if (!input.value.trim() || !state.selectedLead) return; try { const message = await api(`/api/conversations/${state.selectedLead.id}/messages`, { method: 'POST', body: JSON.stringify({ text: input.value }) }); state.conversation.push(message); input.value = ''; const box = $('#messages'); box.insertAdjacentHTML('beforeend', `<div class="message agent">${esc(message.text)}<time>${message.time}</time></div>`); box.scrollTop = box.scrollHeight; } catch (error) { toast(error.message, true); } }
 });
 
