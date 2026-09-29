@@ -61,6 +61,14 @@ async function loadDb() {
   if (!Array.isArray(db.leads)) db.leads = [];
   if (!Array.isArray(db.passengers)) db.passengers = [];
   if (!db.conversations || typeof db.conversations !== 'object') db.conversations = {};
+  db.migrations = db.migrations && typeof db.migrations === 'object' ? db.migrations : {};
+  if (!db.migrations.passengersReady) {
+    db.excursions.forEach((excursion) => { excursion.reserved = 0; });
+    db.passengers = [];
+    db.migrations.passengersReady = new Date().toISOString();
+    await persist();
+    console.log('Reservas legadas zeradas: a operação começará sem passageiros cadastrados.');
+  }
 }
 
 async function persist() {
