@@ -295,7 +295,7 @@ async function route(req, res) {
     }
     if (pathname === '/api/passengers' && req.method === 'GET') {
       const excursionId = url.searchParams.get('excursionId');
-      const passengers = db.passengers.filter((passenger) => !excursionId || passenger.excursionId === excursionId).map((passenger) => ({ ...passenger, excursion: getExcursion(passenger.excursionId)?.title || 'Sem excursão' }));
+      const passengers = db.passengers.filter((passenger) => !excursionId || passenger.excursionId === excursionId).map((passenger) => { const excursion = getExcursion(passenger.excursionId); return { ...passenger, amount: passenger.amount ?? Number(excursion?.price || 0), birthDate: passenger.birthDate || '', excursion: excursion?.title || 'Sem excursão' }; });
       return json(res, 200, passengers);
     }
     if (pathname === '/api/passengers' && req.method === 'POST') {
@@ -305,11 +305,13 @@ async function route(req, res) {
       const phone = String(input.phone || '').trim();
       const cpf = String(input.cpf || '').trim();
       const address = String(input.address || '').trim();
-      const paymentStatus = ['Pago', 'A pagar', 'Financiamento'].includes(input.paymentStatus) ? input.paymentStatus : 'A pagar';
+      const paymentStatus = ['Pago', 'A pagar', 'Financiamento', 'Cortesia'].includes(input.paymentStatus) ? input.paymentStatus : 'A pagar';
+      const birthDate = String(input.birthDate || '').trim();
       if (!excursion) return json(res, 400, { error: 'Escolha uma excursão válida' });
       if (!name || !phone || !cpf || !address) return json(res, 400, { error: 'Preencha nome, celular, CPF e endereço' });
       if (Number(excursion.reserved || 0) >= Number(excursion.seats || 0)) return json(res, 409, { error: 'Esta excursão está lotada' });
-      const passenger = { id: `pass-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`, excursionId: excursion.id, name, phone, cpf, address, paymentStatus, createdAt: new Date().toISOString() };
+      const amount = Number.isFinite(Number(input.amount)) ? Math.max(0, Number(input.amount)) : Number(excursion.price || 0);
+      const passenger = { id: `pass-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`, excursionId: excursion.id, name, phone, cpf, address, birthDate, amount, paymentStatus, createdAt: new Date().toISOString() };
       db.passengers.unshift(passenger);
       excursion.reserved = Number(excursion.reserved || 0) + 1;
       await persist();
@@ -328,10 +330,13 @@ async function route(req, res) {
       }
       if (req.method === 'PATCH') {
         const input = await body(req);
-        if (input.paymentStatus && ['Pago', 'A pagar', 'Financiamento'].includes(input.paymentStatus)) passenger.paymentStatus = input.paymentStatus;
+        if (input.paymentStatus && ['Pago', 'A pagar', 'Financiamento', 'Cortesia'].includes(input.paymentStatus)) passenger.paymentStatus = input.paymentStatus;
+        if (input.amount !== undefined && Number.isFinite(Number(input.amount))) passenger.amount = Math.max(0, Number(input.amount));
+        if (input.birthDate !== undefined) passenger.birthDate = String(input.birthDate).trim();
         for (const field of ['name', 'phone', 'cpf', 'address']) if (input[field] !== undefined) passenger[field] = String(input[field]).trim();
         await persist();
-        return json(res, 200, { ...passenger, excursion: getExcursion(passenger.excursionId)?.title || 'Sem excursão' });
+        const excursion = getExcursion(passenger.excursionId);
+        return json(res, 200, { ...passenger, amount: passenger.amount ?? Number(excursion?.price || 0), birthDate: passenger.birthDate || '', excursion: excursion?.title || 'Sem excursão' });
       }
     }
     const excursionMatch = pathname.match(/^\/api\/excursions\/([^/]+)$/);

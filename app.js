@@ -109,9 +109,11 @@ function renderExcursions() {
 }
 
 function paymentBadge(status) {
-  const cls = status === 'Pago' ? 'paid' : status === 'Financiamento' ? 'financing' : 'pending';
+  const cls = status === 'Pago' ? 'paid' : status === 'Financiamento' ? 'financing' : status === 'Cortesia' ? 'courtesy' : 'pending';
   return `<span class="payment-badge ${cls}">${esc(status || 'A pagar')}</span>`;
 }
+
+function passengerAmount(item, excursion) { return Number.isFinite(Number(item.amount)) ? Number(item.amount) : Number(excursion?.price || 0); }
 
 function renderPassengers() {
   const availableExcursions = state.excursions.filter((item) => item.status !== 'Encerrada');
@@ -121,10 +123,22 @@ function renderPassengers() {
   const paid = passengers.filter((item) => item.paymentStatus === 'Pago').length;
   const pending = passengers.filter((item) => item.paymentStatus === 'A pagar').length;
   const financing = passengers.filter((item) => item.paymentStatus === 'Financiamento').length;
+  const courtesy = passengers.filter((item) => item.paymentStatus === 'Cortesia').length;
   const options = availableExcursions.map((item) => `<option value="${esc(item.id)}" ${item.id === selected?.id ? 'selected' : ''}>${esc(item.title)} · ${item.reserved}/${item.seats} lugares</option>`).join('');
-  const rows = passengers.map((item) => `<div class="passenger-row"><div class="passenger-person"><span class="lead-avatar ${item.paymentStatus === 'Pago' ? '' : item.paymentStatus === 'Financiamento' ? 'purple' : 'blue'}">${esc(item.name.split(/\s+/).map((part) => part[0]).slice(0, 2).join('').toUpperCase())}</span><span><strong>${esc(item.name)}</strong><small>${esc(item.phone)} · CPF ${esc(item.cpf)}</small><small>${esc(item.address)}</small></span></div><div class="passenger-payment">${paymentBadge(item.paymentStatus)}<small>Cadastrado em ${dateTime(item.createdAt)}</small></div><button class="danger-button passenger-delete" type="button" data-action="delete-passenger" data-id="${esc(item.id)}">Excluir</button></div>`).join('');
-  const content = selected ? `<div class="passenger-layout"><section class="panel passenger-form-panel"><div class="panel-header"><div class="panel-title"><h2>Adicionar passageiro</h2><span class="muted">Uma vaga por cadastro</span></div></div><form id="passenger-form" class="passenger-form"><label class="form-label">Excursão<select class="form-control" id="passenger-excursion" name="excursionId" required>${options || '<option value="">Nenhuma excursão disponível</option>'}</select></label><label class="form-label">Nome completo<input class="form-control" name="name" placeholder="Ex.: Ana Souza" autocomplete="name" required /></label><label class="form-label">Celular<input class="form-control" name="phone" placeholder="(62) 99999-9999" autocomplete="tel" required /></label><label class="form-label">CPF<input class="form-control" name="cpf" placeholder="000.000.000-00" inputmode="numeric" required /></label><label class="form-label">Endereço<input class="form-control" name="address" placeholder="Rua, número, bairro e cidade" autocomplete="street-address" required /></label><label class="form-label">Pagamento<select class="form-control" name="paymentStatus"><option>Pago</option><option selected>A pagar</option><option>Financiamento</option></select></label><button class="primary-button" type="button" data-action="save-passenger">＋ Salvar passageiro</button></form></section><section class="panel passenger-list-panel"><div class="panel-header"><div class="panel-title"><h2>${esc(selected.title)}</h2><span class="muted">${passengers.length} passageiro${passengers.length === 1 ? '' : 's'} · ${selected.reserved}/${selected.seats} lugares ocupados</span></div><button class="icon-button" title="Atualizar" data-action="refresh-passengers">↻</button></div><div class="passenger-summary"><div class="passenger-summary-card"><strong>${paid}</strong><span>Pagos</span></div><div class="passenger-summary-card"><strong>${pending}</strong><span>A pagar</span></div><div class="passenger-summary-card"><strong>${financing}</strong><span>Financiamento</span></div></div><div class="passenger-list">${rows || '<div class="empty-card" style="border:0;min-height:230px"><div><span>♙</span><strong>Nenhum passageiro cadastrado</strong><p>Preencha o formulário para reservar a primeira vaga.</p></div></div>'}</div></section></div>` : `<div class="empty-card"><div><span>♙</span><strong>Nenhuma excursão disponível</strong><p>Cadastre uma excursão antes de adicionar passageiros.</p></div></div>`;
+  const rows = passengers.map((item) => { const initials = item.name.split(/\s+/).map((part) => part[0]).slice(0, 2).join('').toUpperCase(); const birthday = item.birthDate ? date(item.birthDate) : 'Aniversário não informado'; return `<div class="passenger-row"><div class="passenger-person"><span class="lead-avatar ${item.paymentStatus === 'Pago' ? '' : item.paymentStatus === 'Financiamento' || item.paymentStatus === 'Cortesia' ? 'purple' : 'blue'}">${esc(initials)}</span><span><strong>${esc(item.name)}</strong><small>${esc(item.phone)} · CPF ${esc(item.cpf)}</small><small>${esc(item.address)}</small></span></div><div class="passenger-payment">${paymentBadge(item.paymentStatus)}<strong>${money(passengerAmount(item, selected))}</strong><small>Nascimento: ${esc(birthday)}</small></div><div class="passenger-actions"><button class="secondary-button passenger-edit" type="button" data-action="edit-passenger" data-id="${esc(item.id)}">Editar</button><button class="danger-button passenger-delete" type="button" data-action="delete-passenger" data-id="${esc(item.id)}">Excluir</button></div></div>`; }).join('');
+  const content = selected ? `<div class="passenger-layout"><section class="panel passenger-form-panel"><div class="panel-header"><div class="panel-title"><h2>Adicionar passageiro</h2><span class="muted">Uma vaga por cadastro</span></div></div><form id="passenger-form" class="passenger-form"><label class="form-label">Excursão<select class="form-control" id="passenger-excursion" name="excursionId" required>${options || '<option value="">Nenhuma excursão disponível</option>'}</select></label><label class="form-label">Nome completo<input class="form-control" name="name" placeholder="Ex.: Ana Souza" autocomplete="name" required /></label><label class="form-label">Celular<input class="form-control" name="phone" placeholder="(62) 99999-9999" autocomplete="tel" required /></label><label class="form-label">CPF<input class="form-control" name="cpf" placeholder="000.000.000-00" inputmode="numeric" required /></label><label class="form-label">Endereço<input class="form-control" name="address" placeholder="Rua, número, bairro e cidade" autocomplete="street-address" required /></label><div class="form-grid"><label class="form-label">Data de aniversário<input class="form-control" type="date" name="birthDate" /></label><label class="form-label">Valor da reserva<input class="form-control" type="number" name="amount" min="0" step="0.01" value="${esc(selected.price)}" required /></label></div><label class="form-label">Pagamento<select class="form-control" name="paymentStatus"><option>Pago</option><option selected>A pagar</option><option>Financiamento</option><option>Cortesia</option></select></label><button class="primary-button" type="button" data-action="save-passenger">＋ Salvar passageiro</button></form></section><section class="panel passenger-list-panel"><div class="panel-header"><div class="panel-title"><h2>${esc(selected.title)}</h2><span class="muted">${passengers.length} passageiro${passengers.length === 1 ? '' : 's'} · ${selected.reserved}/${selected.seats} lugares ocupados</span></div><div class="passenger-list-actions"><button class="secondary-button" data-action="export-passengers-pdf">⇩ Gerar PDF</button><button class="icon-button" title="Atualizar" data-action="refresh-passengers">↻</button></div></div><div class="passenger-summary passenger-summary-four"><div class="passenger-summary-card"><strong>${paid}</strong><span>Pagos</span></div><div class="passenger-summary-card"><strong>${pending}</strong><span>A pagar</span></div><div class="passenger-summary-card"><strong>${financing}</strong><span>Financiamento</span></div><div class="passenger-summary-card"><strong>${courtesy}</strong><span>Cortesia</span></div></div><div class="passenger-list">${rows || '<div class="empty-card" style="border:0;min-height:230px"><div><span>♙</span><strong>Nenhum passageiro cadastrado</strong><p>Preencha o formulário para reservar a primeira vaga.</p></div></div>'}</div></section></div>` : `<div class="empty-card"><div><span>♙</span><strong>Nenhuma excursão disponível</strong><p>Cadastre uma excursão antes de adicionar passageiros.</p></div></div>`;
   renderShell(`${pageHeading('VENDAS & RESERVAS', 'Passageiros', 'Escolha a excursão, registre os viajantes e acompanhe os pagamentos.', '<button class="secondary-button" data-action="refresh-passengers">↻ Atualizar</button>')}${content}`);
+}
+
+function exportPassengersPdf() {
+  const selected = state.excursions.find((item) => item.id === state.passengerExcursionId);
+  if (!selected) { toast('Selecione uma excursão primeiro', true); return; }
+  const passengers = state.passengers.filter((item) => item.excursionId === selected.id);
+  const popup = window.open('', '_blank');
+  if (!popup) { toast('O navegador bloqueou a janela do PDF', true); return; }
+  const rows = passengers.map((item, index) => `<tr><td>${index + 1}</td><td>${esc(item.name)}</td><td>${esc(item.phone)}</td><td>${esc(item.cpf)}</td><td>${esc(item.birthDate ? date(item.birthDate) : '—')}</td><td>${esc(item.address)}</td><td>${money(passengerAmount(item, selected))}</td><td>${esc(item.paymentStatus || 'A pagar')}</td></tr>`).join('');
+  popup.document.write(`<!doctype html><html lang="pt-BR"><head><meta charset="utf-8"><title>Reservas · ${esc(selected.title)}</title><style>body{font-family:Arial,sans-serif;color:#102b33;padding:32px;font-size:11px}h1{font-size:22px;margin:0 0 5px}p{color:#607277;margin:4px 0 22px}table{width:100%;border-collapse:collapse}th,td{border:1px solid #d9e2e1;padding:7px;text-align:left;vertical-align:top}th{background:#eaf2d7;font-size:10px}td:nth-child(7){white-space:nowrap}.footer{margin-top:18px;color:#607277;font-size:10px}@media print{body{padding:0}button{display:none}}</style></head><body><h1>Reservas · ${esc(selected.title)}</h1><p>${esc(selected.destination)} · saída ${esc(date(selected.date))} · ${passengers.length} passageiro${passengers.length === 1 ? '' : 's'}</p><table><thead><tr><th>#</th><th>Nome</th><th>Celular</th><th>CPF</th><th>Aniversário</th><th>Endereço</th><th>Valor</th><th>Pagamento</th></tr></thead><tbody>${rows || '<tr><td colspan="8">Nenhum passageiro cadastrado.</td></tr>'}</tbody></table><div class="footer">Gerado pela Agência Premius em ${new Intl.DateTimeFormat('pt-BR').format(new Date())}. Use “Salvar como PDF” na janela de impressão.</div></body></html>`);
+  popup.document.close(); popup.focus(); setTimeout(() => popup.print(), 250);
 }
 
 async function renderWhatsApp() {
@@ -187,6 +201,17 @@ async function savePassenger(form) {
   renderPassengers();
 }
 
+async function savePassengerEdit(form) {
+  const input = Object.fromEntries(new FormData(form).entries());
+  const id = input.id;
+  delete input.id;
+  await api(`/api/passengers/${id}`, { method: 'PATCH', body: JSON.stringify(input) });
+  $('#modal-root').innerHTML = '';
+  await loadData();
+  toast('Reserva atualizada');
+  renderPassengers();
+}
+
 function openExcursionModal(item = null) {
   const editing = Boolean(item);
   const value = (key, fallback = '') => esc(item?.[key] ?? fallback);
@@ -203,6 +228,12 @@ function openDeleteLeadConfirm(lead) {
 
 function openDeletePassengerConfirm(passenger) {
   $('#modal-root').innerHTML = `<div class="modal-backdrop"><div class="modal confirm-modal"><div class="modal-header"><h2>Excluir passageiro?</h2><button type="button" data-action="close-modal">×</button></div><div class="modal-body"><p style="margin:0;color:var(--muted);line-height:1.55">Excluir <b style="color:var(--ink)">${esc(passenger.name)}</b> removerá esta reserva e devolverá a vaga para a excursão.</p></div><div class="modal-footer"><button type="button" class="secondary-button" data-action="close-modal">Cancelar</button><button type="button" class="danger-button" style="margin-left:0;margin-right:0" data-action="confirm-delete-passenger" data-id="${esc(passenger.id)}">Excluir definitivamente</button></div></div></div>`;
+}
+
+function openPassengerEditModal(item) {
+  const excursion = state.excursions.find((candidate) => candidate.id === item.excursionId);
+  const value = (key, fallback = '') => esc(item?.[key] ?? fallback);
+  $('#modal-root').innerHTML = `<div class="modal-backdrop"><form class="modal" id="passenger-edit-form"><div class="modal-header"><h2>Editar reserva</h2><button type="button" data-action="close-modal">×</button></div><div class="modal-body"><input type="hidden" name="id" value="${value('id')}" /><label class="form-label">Passageiro<input class="form-control" name="name" value="${value('name')}" required /></label><div class="form-grid"><label class="form-label">Celular<input class="form-control" name="phone" value="${value('phone')}" required /></label><label class="form-label">CPF<input class="form-control" name="cpf" value="${value('cpf')}" required /></label></div><label class="form-label">Endereço<input class="form-control" name="address" value="${value('address')}" required /></label><div class="form-grid"><label class="form-label">Data de aniversário<input class="form-control" type="date" name="birthDate" value="${value('birthDate')}" /></label><label class="form-label">Valor da reserva<input class="form-control" type="number" name="amount" min="0" step="0.01" value="${value('amount', excursion?.price || 0)}" required /></label></div><label class="form-label">Pagamento<select class="form-control" name="paymentStatus"><option ${item.paymentStatus === 'Pago' ? 'selected' : ''}>Pago</option><option ${item.paymentStatus === 'A pagar' ? 'selected' : ''}>A pagar</option><option ${item.paymentStatus === 'Financiamento' ? 'selected' : ''}>Financiamento</option><option ${item.paymentStatus === 'Cortesia' ? 'selected' : ''}>Cortesia</option></select></label></div><div class="modal-footer"><button type="button" class="secondary-button" data-action="close-modal">Cancelar</button><button type="button" class="primary-button" data-action="save-passenger-edit">Salvar alterações</button></div></form></div>`;
 }
 
 function openLeadModal() { $('#modal-root').innerHTML = `<div class="modal-backdrop"><div class="modal"><div class="modal-header"><h2>Cadastrar lead</h2><button data-action="close-modal">×</button></div><div class="modal-body"><p class="muted" style="margin:0">O cadastro manual estará conectado à agenda de atendimento na próxima etapa. Por enquanto, a central está recebendo leads do WhatsApp e das redes sociais automaticamente.</p></div><div class="modal-footer"><button class="primary-button" data-action="close-modal">Entendi</button></div></div></div>`; }
@@ -226,6 +257,7 @@ document.addEventListener('click', async (event) => {
     if (type === 'new-excursion') openExcursionModal();
     if (type === 'save-excursion') { action.disabled = true; action.textContent = 'Salvando…'; await saveExcursion($('#excursion-form')); }
     if (type === 'save-passenger') { action.disabled = true; action.textContent = 'Salvando…'; await savePassenger($('#passenger-form')); }
+    if (type === 'save-passenger-edit') { action.disabled = true; action.textContent = 'Salvando…'; await savePassengerEdit($('#passenger-edit-form')); }
     if (type === 'new-lead') openLeadModal();
     if (type === 'close-modal') $('#modal-root').innerHTML = '';
     if (type === 'refresh') { await loadData(); toast('Leads atualizados'); if (state.view === 'leads') renderLeads(); }
@@ -249,11 +281,16 @@ document.addEventListener('click', async (event) => {
       const item = state.passengers.find((passenger) => passenger.id === action.dataset.id);
       if (item) openDeletePassengerConfirm(item);
     }
+    if (type === 'edit-passenger') {
+      const item = state.passengers.find((passenger) => passenger.id === action.dataset.id);
+      if (item) openPassengerEditModal(item);
+    }
     if (type === 'confirm-delete-passenger') {
       const item = state.passengers.find((passenger) => passenger.id === action.dataset.id);
       if (item) { action.disabled = true; action.textContent = 'Excluindo…'; await api(`/api/passengers/${item.id}`, { method: 'DELETE' }); $('#modal-root').innerHTML = ''; await loadData(); toast('Passageiro excluído e vaga liberada'); renderPassengers(); }
     }
     if (type === 'refresh-passengers') { action.disabled = true; await loadData(); renderPassengers(); toast('Reservas atualizadas'); }
+    if (type === 'export-passengers-pdf') exportPassengersPdf();
     if (type === 'export-excursions') {
       const rows = [['Roteiro', 'Destino', 'Saida', 'Retorno', 'Status', 'Lugares', 'Reservados', 'Valor por pessoa'], ...state.excursions.map((item) => [item.title, item.destination, item.date, item.endDate || '', item.status, item.seats, item.reserved, item.price])];
       const csv = rows.map((row) => row.map((value) => `"${String(value ?? '').replaceAll('"', '""')}"`).join(';')).join('\n');
@@ -278,6 +315,7 @@ document.addEventListener('submit', async (event) => {
   if (event.target.id === 'login-form') { event.preventDefault(); await login(Object.fromEntries(new FormData(event.target).entries())); return; }
   if (event.target.id === 'excursion-form') { event.preventDefault(); try { await saveExcursion(event.target); } catch (error) { toast(error.message, true); } }
   if (event.target.id === 'passenger-form') { event.preventDefault(); try { await savePassenger(event.target); } catch (error) { toast(error.message, true); } }
+  if (event.target.id === 'passenger-edit-form') { event.preventDefault(); try { await savePassengerEdit(event.target); } catch (error) { toast(error.message, true); } }
   if (event.target.id === 'compose-form') { event.preventDefault(); const input = $('#message-input'); if (!input.value.trim() || !state.selectedLead) return; try { const message = await api(`/api/conversations/${state.selectedLead.id}/messages`, { method: 'POST', body: JSON.stringify({ text: input.value }) }); state.conversation.push(message); input.value = ''; const box = $('#messages'); box.insertAdjacentHTML('beforeend', `<div class="message agent">${esc(message.text)}<time>${message.time}</time></div>`); box.scrollTop = box.scrollHeight; } catch (error) { toast(error.message, true); } }
 });
 
