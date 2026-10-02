@@ -389,7 +389,8 @@ async function serveStatic(pathname, res) {
   const file = path.resolve(__dirname, `.${requested}`);
   if (!file.startsWith(__dirname) || !existsSync(file)) return json(res, 404, { error: 'Não encontrado' });
   const ext = path.extname(file); const types = { '.html': 'text/html; charset=utf-8', '.css': 'text/css; charset=utf-8', '.js': 'text/javascript; charset=utf-8', '.png': 'image/png', '.svg': 'image/svg+xml' };
-  res.writeHead(200, { 'Content-Type': types[ext] || 'application/octet-stream' }); res.end(await readFile(file));
+  const cacheControl = ['.html', '.css', '.js'].includes(ext) ? 'no-store' : 'public, max-age=86400';
+  res.writeHead(200, { 'Content-Type': types[ext] || 'application/octet-stream', 'Cache-Control': cacheControl }); res.end(await readFile(file));
 }
 
 await loadDb();
